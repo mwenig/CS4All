@@ -42,12 +42,17 @@ int main(int argc, int *argv) {
 
     *start = 0;
 
+    yield();
+
     *ptr = malloc(20);
     *ptr = 42;
     i = 0;
-    while (i < hypster_ID() * 500000) {
+
+    while (i < 500000) {
         i = i + 1;
     }
+
+    yield();
 
     *start = *start + 1;
     *ptr = *ptr + 1;
@@ -55,6 +60,21 @@ int main(int argc, int *argv) {
     dumbITOA(*start);
     write(1,"heap",4);
     dumbITOA(*ptr);
+
+    i = 0;
+    while (i < 500000) {
+        i = i + 1;
+    }
+
+    yield();
+
+    shm_close(id);
+
+    yield();
+
+    *start = *start + 1;
+    write(1,"start",5);
+    dumbITOA(*start);
 
     //id = shm_open("/smem");
 

@@ -4868,51 +4868,54 @@ void implementShmClose() {
 
     // first check if there are frames existing!
     // else we can't delete the frames
-    frameEntry = get_shmo_frames(shmo);
-    if (frameEntry == (int *) 0) {
-      returnValue = -1;
-    }
-    // there are frames existing
-    else {
-      // for every frame do:
-      // delete reference to frame
-      // get private page
-      // copy data to private page
+    if (get_shmo_clients(shmo) == (int*) 0){
+      delete_shmo(shmo);
+    } else {
+      frameEntry = get_shmo_frames(shmo);
+      if (frameEntry == (int *) 0) {
+        returnValue = -1;
+      }
+      // there are frames existing
+      else {
+        // for every frame do:
+        // delete reference to frame
+        // get private page
+        // copy data to private page
 
-      //find right client and remove from the clientList
-      client = get_shmo_clients(shmo);
+        //find right client and remove from the clientList
+        client = get_shmo_clients(shmo);
         //if last and lonely client --> we don't need to copy frame to make the frame private.
-      if(getNextClient(client) != (int*) 0) {
+        if (getNextClient(client) != (int *) 0) {
           while (client != (int *) 0) {
-              if (getID(currentContext) == getClientPID(client)) {
-                  //we only need the pages of the client -> store them if found
-                  // we should break the while now.. but we ignore the perfomance loses and iterate over all clients
-                  clientPageEntry = getClientPages(client);
+            if (getID(currentContext) == getClientPID(client)) {
+              //we only need the pages of the client -> store them if found
+              // we should break the while now.. but we ignore the perfomance loses and iterate over all clients
+              clientPageEntry = getClientPages(client);
 
-                  //delete yourself from list
-                  deleteClientFromShmo(shmo, client);
-              }
-              client = getNextClient(client);
+              //delete yourself from list
+              deleteClientFromShmo(shmo, client);
+            }
+            client = getNextClient(client);
           }
 
           pageTable = getPT(currentContext);
           //iterate over all frames
           while (frameEntry != (int *) 0) {
 
-              //unmap page in pageTable of the client's context
-              *(pageTable + (*clientPageEntry)) = 0;
-              //create private page
-              privateFrame = palloc();
-              mapPage(pageTable, (*clientPageEntry), (int) privateFrame);
-              //copy shared memory to private page
-              copyFrameToFrame(privateFrame, (int *) getFrame(frameEntry));
+            //unmap page in pageTable of the client's context
+            *(pageTable + (*clientPageEntry)) = 0;
+            //create private page
+            privateFrame = palloc();
+            mapPage(pageTable, (*clientPageEntry), (int) privateFrame);
+            //copy shared memory to private page
+            copyFrameToFrame(privateFrame, (int *) getFrame(frameEntry));
 
-              frameEntry = getNextFrame(frameEntry);
+            frameEntry = getNextFrame(frameEntry);
           }
-      } else {
+        } else {
           deleteClientFromShmo(shmo, client);
+        }
       }
-
       //delete shmo if no clients are existing
       if (get_shmo_clients(shmo) == (int*) 0){
         delete_shmo(shmo);

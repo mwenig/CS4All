@@ -48,11 +48,11 @@ testC: selfie
 	diff -q selfie3.m selfie5.m
 	diff -q selfie3.s selfie5.s
 
-assign3: selfie
+assign3: selfie shmoTest
 	./selfie -c selfie.c -o selfie.m -m 2
 	./selfie -l selfie.m -c assign3test.c -o assign3test.m -m 2
-	./selfie -l selfie.m -k 4 -l assign3test.m -t 10 -n 3 -u 1
-	./selfie -l selfie.m -k 4 -l selfie.m -y -l assign3test.m -t 10 -n 3 -u 1
+	./selfie -l selfie.m -k 10 -l assign3test.m -t 10 -n 3 -u 2
+	./selfie -l selfie.m -k 10 -l selfie.m -y 5 -l assign3test.m -t 10 -n 3 -u 2
 	./selfie -l assign3test.m -t 10 -n 3 -u 1
 	
 assign2: selfie
