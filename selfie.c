@@ -834,6 +834,8 @@ void implementMalloc();
 void emitYield();
 void implementYield();
 
+void implementForkThread();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_read   = 0;
@@ -867,6 +869,8 @@ int  doSwitch(int toID);
 void implementSwitch();
 int  mipster_switch(int toID);
 int selfie_switch(int toID);
+
+void doThreadFork(int* context, int* thread);
 
 void emitStatus();
 void implementStatus();
@@ -913,6 +917,7 @@ int SYSCALL_SHMO   = 4908;
 int SYSCALL_SHMS   = 4909;
 int SYSCALL_SHMM   = 4910;
 int SYSCALL_SHMC   = 4911;
+int SYSCALL_FORK_THREAD = 4912;
 
 
 
@@ -1265,6 +1270,7 @@ void switchContext(int* from, int* to);
 
 void freeContext(int* context);
 int* deleteContext(int* context, int* from);
+void deleteThread(int* context, int* thread);
 
 void mapPage(int* table, int page, int frame);
 
@@ -1280,29 +1286,62 @@ void mapPage(int* table, int page, int frame);
 // | 7 | pt     | pointer to page table
 // | 8 | brk    | break between code, data, and heap
 // | 9 | parent | ID of context that created this context
+// | 10| threads| list of all threads of this context
+// | 11| curThre| current thread, points to an element in "threads"
 // +---+--------+
 
-int* getNextContext(int* context) { return (int*) *context; }
-int* getPrevContext(int* context) { return (int*) *(context + 1); }
-int  getID(int* context)          { return        *(context + 2); }
-int  getPC(int* context)          { return        *(context + 3); }
-int* getRegs(int* context)        { return (int*) *(context + 4); }
-int  getRegHi(int* context)       { return        *(context + 5); }
-int  getRegLo(int* context)       { return        *(context + 6); }
-int* getPT(int* context)          { return (int*) *(context + 7); }
-int  getBreak(int* context)       { return        *(context + 8); }
-int  getParent(int* context)      { return        *(context + 9); }
+int* getNextContext(int* context)  { return (int*) *context; }
+int* getPrevContext(int* context)  { return (int*) *(context + 1); }
+int  getID(int* context)           { return        *(context + 2); }
+int  getPC(int* context)           { return        *(context + 3); }
+int* getRegs(int* context)         { return (int*) *(context + 4); }
+int  getRegHi(int* context)        { return        *(context + 5); }
+int  getRegLo(int* context)        { return        *(context + 6); }
+int* getPT(int* context)           { return (int*) *(context + 7); }
+int  getBreak(int* context)        { return        *(context + 8); }
+int  getParent(int* context)       { return        *(context + 9); }
+int* getThreads(int* context)      { return (int*) *(context + 10); }
+int* getCurrentThread(int* context){ return (int*) *(context + 11); }
 
-void setNextContext(int* context, int* next) { *context       = (int) next; }
-void setPrevContext(int* context, int* prev) { *(context + 1) = (int) prev; }
-void setID(int* context, int id)             { *(context + 2) = id; }
-void setPC(int* context, int pc)             { *(context + 3) = pc; }
-void setRegs(int* context, int* regs)        { *(context + 4) = (int) regs; }
-void setRegHi(int* context, int reg_hi)      { *(context + 5) = reg_hi; }
-void setRegLo(int* context, int reg_lo)      { *(context + 6) = reg_lo; }
-void setPT(int* context, int* pt)            { *(context + 7) = (int) pt; }
-void setBreak(int* context, int brk)         { *(context + 8) = brk; }
-void setParent(int* context, int id)         { *(context + 9) = id; }
+void setNextContext(int* context, int* next)     { *context       = (int) next; }
+void setPrevContext(int* context, int* prev)     { *(context + 1) = (int) prev; }
+void setID(int* context, int id)                 { *(context + 2) = id; }
+void setPC(int* context, int pc)                 { *(context + 3) = pc; }
+void setRegs(int* context, int* regs)            { *(context + 4) = (int) regs; }
+void setRegHi(int* context, int reg_hi)          { *(context + 5) = reg_hi; }
+void setRegLo(int* context, int reg_lo)          { *(context + 6) = reg_lo; }
+void setPT(int* context, int* pt)                { *(context + 7) = (int) pt; }
+void setBreak(int* context, int brk)             { *(context + 8) = brk; }
+void setParent(int* context, int id)             { *(context + 9) = id; }
+void setThreads(int* context, int* threads)      { *(context + 10)= (int) threads; }
+void setCurrThread(int* context, int* currThread){ *(context + 11)= (int) currThread; }
+
+// thread struct:
+// +---+--------+
+// | 0 | next   | pointer to next context
+// | 1 | prev   | pointer to previous context
+// | 2 | tid    | unique identifier
+// | 3 | pc     | program counter
+// | 4 | regs   | pointer to general purpose registers
+// | 5 | reg_hi | hi register
+// | 6 | reg_lo | lo register
+// +---+--------+
+
+int* getNextThread(int* thread)    { return (int*) *thread; }
+int* getPrevThread(int* thread)    { return (int*) *(thread + 1); }
+int  getThreadID(int* thread)      { return        *(thread + 2); }
+int  getThreadPC(int* thread)      { return        *(thread + 3); }
+int* getThreadRegs(int* thread)    { return (int*) *(thread + 4); }
+int  getThreadRegHi(int* thread)   { return        *(thread + 5); }
+int  getThreadRegLo(int* thread)   { return        *(thread + 6); }
+
+void setNextThread(int* thread, int* next)       { *thread       = (int) next; }
+void setPrevThread(int* thread, int* prev)       { *(thread + 1) = (int) prev; }
+void setThreadID(int* thread, int id)            { *(thread + 2) = id; }
+void setThreadPC(int* thread, int pc)            { *(thread + 3) = pc; }
+void setThreadRegs(int* thread, int* regs)       { *(thread + 4) = (int) regs; }
+void setThreadRegHi(int* thread, int regHi)      { *(thread + 5) = regHi; }
+void setThreadRegLo(int* thread, int regLo)      { *(thread + 6) = regLo; }
 
 // -----------------------------------------------------------------
 // -------------------------- MICROKERNEL --------------------------
@@ -5457,6 +5496,12 @@ void implementYield() {
     throwException(EXCEPTION_YIELD, 0);
 }
 
+void implementForkThread() {
+
+    //TODO RUPI: fork the thread
+}
+
+
 // -----------------------------------------------------------------
 // ----------------------- HYPSTER SYSCALLS ------------------------
 // -----------------------------------------------------------------
@@ -5551,6 +5596,12 @@ void emitSwitch() {
   emitRFormat(OP_SPECIAL, REG_ZR, REG_V1, REG_V0, FCT_ADDU);
 
   emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+
+//the implementFork just done right
+void doThreadFork(int* context, int* thread) {
+    //TODO RUPI: implement forking a thread by function call
 }
 
 int doSwitch(int toID) {
@@ -5724,11 +5775,31 @@ void emitDelete() {
 
 void doDelete(int ID) {
   int* context;
+  int* thread;
 
   context = findContext(ID, usedContexts);
 
   if (context != (int*) 0) {
-    usedContexts = deleteContext(context, usedContexts);
+    thread = getCurrentThread(context);
+    if (thread != (int*) 0){
+      //delete the currentThread
+      deleteThread(context, thread);
+      thread = getThreads(context);
+      if (thread == (int*) 0){
+        //no other threads?? delete context too;
+        usedContexts = deleteContext(context, usedContexts);
+      }
+    }
+    //no threads here?? delete context;
+    else {
+      if (debug_delete) {
+        print(binaryName);
+        print((int*) ": selfie_delete no thread was here at context ");
+        printInteger(ID);
+        println();
+      }
+      usedContexts = deleteContext(context, usedContexts);
+    };
 
     if (debug_delete) {
       print(binaryName);
@@ -6278,6 +6349,8 @@ void fct_syscall() {
       implementID();
     else if (*(registers+REG_V0) == SYSCALL_YIELD)
         implementYield();
+    else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD)
+        implementForkThread();
     else if (*(registers+REG_V0) == SYSCALL_CREATE)
       implementCreate();
     else if (*(registers+REG_V0) == SYSCALL_SWITCH)
@@ -7211,14 +7284,17 @@ int createID(int seed) {
 
 int* allocateContext(int ID, int parentID) {
   int* context;
+  int* mainThread;
 
   if (freeContexts == (int*) 0)
-    context = malloc(4 * SIZEOFINTSTAR + 6 * SIZEOFINT);
+    context = malloc(6 * SIZEOFINTSTAR + 6 * SIZEOFINT);
   else {
     context = freeContexts;
 
     freeContexts = getNextContext(freeContexts);
   }
+
+  mainThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
 
   setNextContext(context, (int*) 0);
   setPrevContext(context, (int*) 0);
@@ -7242,6 +7318,16 @@ int* allocateContext(int ID, int parentID) {
   setBreak(context, maxBinaryLength);
 
   setParent(context, parentID);
+
+  setNextThread(mainThread, (int*) 0);
+  setPrevThread(mainThread, (int*) 0);
+  setThreadID(mainThread, 0);
+  setThreadPC(mainThread, 0);
+  setThreadRegs(mainThread, getRegs(context));
+  setThreadRegLo(mainThread, 0);
+  setThreadRegHi(mainThread, 0);
+  setThreads(context, mainThread);
+  setCurrThread(context, mainThread);
 
   return context;
 }
@@ -7275,17 +7361,21 @@ int* findContext(int ID, int* in) {
 }
 
 void switchContext(int* from, int* to) {
+  int* thread;
+
+  thread = getCurrentThread(from);
+
   // save machine state
-  setPC(from, pc);
-  setRegHi(from, reg_hi);
-  setRegLo(from, reg_lo);
+  setThreadPC(thread, pc);
+  setThreadRegHi(thread, reg_hi);
+  setThreadRegLo(thread, reg_lo);
   setBreak(from, brk);
 
   // restore machine state
-  pc        = getPC(to);
-  registers = getRegs(to);
-  reg_hi    = getRegHi(to);
-  reg_lo    = getRegLo(to);
+  pc        = getThreadPC(thread);
+  registers = getThreadRegs(thread);
+  reg_hi    = getThreadRegHi(thread);
+  reg_lo    = getThreadRegLo(thread);
   pt        = getPT(to);
   brk       = getBreak(to);
 }
@@ -7312,6 +7402,17 @@ int* deleteContext(int* context, int* from) {
   freeContext(context);
 
   return from;
+}
+
+void deleteThread(int* from, int* thread){
+  if (getNextThread(thread) != (int*) 0)
+    setPrevThread(getNextThread(thread), getPrevThread(thread));
+
+  if (getPrevThread(thread) != (int*) 0) {
+    setNextThread(getPrevThread(thread), getNextThread(thread));
+    setPrevThread(thread, (int*) 0);
+  } else
+    setThreads(from, getNextThread(thread));
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -7726,6 +7827,10 @@ int boot(int argc, int* argv) {
 
         up_loadBinary(getPT(usedContexts));
         up_loadArguments(getPT(usedContexts), argc, argv);
+
+        //TODO RUPI: implement proper threadForking and kick context copying
+        //doThreadFork(usedContexts, getCurrentThread(usedContexts));
+
         // propagate page table of initial context to microkernel boot level
         down_mapPageTable(usedContexts);
         counter = counter + 1;
