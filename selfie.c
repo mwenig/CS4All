@@ -870,6 +870,8 @@ void implementSwitch();
 int  mipster_switch(int toID);
 int selfie_switch(int toID);
 
+int scheduleRoundRobin(int fromID);
+
 void doThreadFork(int* context, int* thread);
 
 void emitStatus();
@@ -5696,24 +5698,21 @@ int selfie_switch(int toID) {
 int scheduleRoundRobin(int fromID) {
   int *nextContext;
   int *currContext;
+  int *nextThread;
   //get current context
   currContext = findContext(fromID, usedContexts);
-  // find next context
-  nextContext = getNextContext(currContext);
 
+    // find next context
+  nextContext = getNextContext(currContext);
   if (nextContext == (int *) 0) {
     nextContext = usedContexts;
   }
-
-  //hypervisor in hypervisor?? then schedule to the upper hypervisor
-  if(getParent(nextContext) == fromID){
-    print((int*) "happened just, fromID: ");
-    printInteger(fromID);
-    print((int *) ", toID: ");
-    printInteger(getID(currContext));
-    println();
-    nextContext = currContext;
+  //schedule to the next thread
+  nextThread = getNextThread(getCurrentThread(nextContext));
+  if(nextThread == (int*) 0){
+      nextThread = getThreads(nextContext);
   }
+  setCurrThread(nextContext, nextThread);
 
 
   return getID(nextContext);
@@ -5786,15 +5785,15 @@ void doDelete(int ID) {
       deleteThread(context, thread);
       thread = getThreads(context);
       if (thread == (int*) 0){
-        //no other threads?? delete context too;
+        //no other threads?? delete context too
         usedContexts = deleteContext(context, usedContexts);
       }
     }
-    //no threads here?? delete context;
+    //no threads here?? delete context -- this should actually never happen
     else {
       if (debug_delete) {
         print(binaryName);
-        print((int*) ": selfie_delete no thread was here at context ");
+        print((int*) ": [ERROR] selfie_delete no thread was here at context ");
         printInteger(ID);
         println();
       }
@@ -7032,6 +7031,9 @@ void printStatus(int status) {
   if (exception == EXCEPTION_PAGEFAULT) {
     print((int*) " at ");
     printHexadecimal(parameter, 8);
+  } else if (exception == EXCEPTION_ADDRESSERROR){
+    print((int*) " at ");
+    printHexadecimal(parameter, 8);
   }
 }
 
@@ -7047,6 +7049,8 @@ void throwException(int exception, int parameter) {
     print(binaryName);
     print((int*) ": context ");
     printInteger(getID(currentContext));
+    print((int*) " thread");
+    printInteger(getThreadID(getCurrentThread(currentContext)));
     print((int*) " throws ");
     printStatus(status);
     print((int*) " exception");
@@ -7301,14 +7305,14 @@ int* allocateContext(int ID, int parentID) {
 
   setID(context, ID);
 
-  setPC(context, 0);
+  //setPC(context, 0);
 
   // allocate zeroed memory for general purpose registers
   // TODO: reuse memory
-  setRegs(context, zalloc(NUMBEROFREGISTERS * WORDSIZE));
+  //setRegs(context, zalloc(NUMBEROFREGISTERS * WORDSIZE));
 
-  setRegHi(context, 0);
-  setRegLo(context, 0);
+  //setRegHi(context, 0);
+  //setRegLo(context, 0);
 
   // allocate zeroed memory for page table
   // TODO: save and reuse memory for page table
@@ -7323,7 +7327,7 @@ int* allocateContext(int ID, int parentID) {
   setPrevThread(mainThread, (int*) 0);
   setThreadID(mainThread, 0);
   setThreadPC(mainThread, 0);
-  setThreadRegs(mainThread, getRegs(context));
+  setThreadRegs(mainThread, zalloc(NUMBEROFREGISTERS * WORDSIZE));
   setThreadRegLo(mainThread, 0);
   setThreadRegHi(mainThread, 0);
   setThreads(context, mainThread);
@@ -7371,6 +7375,8 @@ void switchContext(int* from, int* to) {
   setThreadRegLo(thread, reg_lo);
   setBreak(from, brk);
 
+  thread = getCurrentThread(to);
+
   // restore machine state
   pc        = getThreadPC(thread);
   registers = getThreadRegs(thread);
@@ -7397,7 +7403,7 @@ int* deleteContext(int* context, int* from) {
     from = getNextContext(context);
 
   //todo delete shared objects by this thread
-  //freeSharedMemoryForContext(getID(context));
+  //freeSharedMemoryForContext(getID(context))
 
   freeContext(context);
 
@@ -7413,6 +7419,11 @@ void deleteThread(int* from, int* thread){
     setPrevThread(thread, (int*) 0);
   } else
     setThreads(from, getNextThread(thread));
+
+  if(getCurrentThread(from) == thread){
+      setCurrThread(from, getNextThread(thread));
+  }
+
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -7613,38 +7624,39 @@ int runUntilExitWithoutExceptionHandling(int toID) {
     int savedStatus;
     int exceptionNumber;
 
-    while (1) {
-        fromID = mipster_switch(toID);
+  while (1) {
+    fromID = mipster_switch(toID);
 
-        fromContext = findContext(fromID, usedContexts);
+    fromContext = findContext(fromID, usedContexts);
 
-        // assert: fromContext must be in usedContexts (created here)
+    // assert: fromContext must be in usedContexts (created here)
+    if (getParent(fromContext) != MIPSTER_ID)
+      // switch to parent which is in charge of handling exceptions
+      toID = getParent(fromContext);
+    else {
+      // we are the parent in charge of handling exit exceptions
+      savedStatus = doStatus();
 
-        if (getParent(fromContext) != MIPSTER_ID)
-            // switch to parent which is in charge of handling exceptions
-            toID = getParent(fromContext);
-        else {
-            // we are the parent in charge of handling exit exceptions
-            savedStatus = doStatus();
+      exceptionNumber = decodeExceptionNumber(savedStatus);
 
-            exceptionNumber = decodeExceptionNumber(savedStatus);
+      if (exceptionNumber == EXCEPTION_EXIT)
+        // TODO: only return if all contexts have exited
+        return decodeExceptionParameter(savedStatus);
+      else if (exceptionNumber != EXCEPTION_TIMER) {
+        print(binaryName);
+        print((int *) ": context ");
+        printInteger(getID(fromContext));
+        print((int *) " thread ");
+        printInteger(getThreadID(getCurrentThread(fromContext)));
+        print((int *) " throws uncaught ");
+        printStatus(savedStatus);
+        println();
 
-            if (exceptionNumber == EXCEPTION_EXIT)
-                // TODO: only return if all contexts have exited
-                return decodeExceptionParameter(savedStatus);
-            else if (exceptionNumber != EXCEPTION_TIMER) {
-                print(binaryName);
-                print((int*) ": context ");
-                printInteger(getID(fromContext));
-                print((int*) " throws uncaught ");
-                printStatus(savedStatus);
-                println();
-
-                return -1;
-            } else
-                toID = fromID;
-        }
+        return -1;
+      } else
+        toID = fromID;
     }
+  }
 }
 
 
@@ -7664,75 +7676,60 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
 
     // assert: fromContext must be in usedContexts (created here)
     if (getParent(fromContext) != selfie_ID()) {
-        // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
-        toID = getParent(fromContext);
+      // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
+      toID = getParent(fromContext);
 
-        if (findContext(toID, usedContexts) == (int *) 0)
-            return 1;
-    }
-    else {
+      if (findContext(toID, usedContexts) == (int *) 0)
+        return 1;
+    } else {
       // we are the parent in charge of handling exceptions
-        savedStatus = selfie_status();
-        exceptionNumber = decodeExceptionNumber(savedStatus);
-        exceptionParameter = decodeExceptionParameter(savedStatus);
+      savedStatus = selfie_status();
+      exceptionNumber = decodeExceptionNumber(savedStatus);
+      exceptionParameter = decodeExceptionParameter(savedStatus);
 
-        if (exceptionNumber == EXCEPTION_PAGEFAULT) {
-          frame = (int) palloc();
+      if (exceptionNumber == EXCEPTION_PAGEFAULT) {
+        frame = (int) palloc();
 
-          //print((int *) "handled PAGEFAULT: ");
-          //printInteger(selfie_ID());
-          //println();
+        // TODO: use this table to unmap and reuse frames
+        mapPage(getPT(fromContext), exceptionParameter, frame);
 
-            // TODO: use this table to unmap and reuse frames
-          mapPage(getPT(fromContext), exceptionParameter, frame);
+        // page table on microkernel boot level
+        selfie_map(fromID, exceptionParameter, frame);
+      } else if (exceptionNumber == EXCEPTION_EXIT) {
 
-            // page table on microkernel boot level
-          selfie_map(fromID, exceptionParameter, frame);
+
+        //delete current context
+        selfie_delete(fromID);
+
+        //if hypster is used, also delete context from its local contexts.
+        if (mipster == 0)
+          doDelete(fromID);
+
+        //if context list is now empty, then terminate
+        if (usedContexts == (int *) 0) {
+          return exceptionParameter;
         }
-        else if (exceptionNumber == EXCEPTION_EXIT) {
+          //otherwise: schedule other process. TODO: make this more fair
+        else
+          toID = getID(usedContexts);
 
-          //print((int *) "handled EXIT: ");
-          //printInteger(selfie_ID());
-          //println();
-
-          //delete current context
-            selfie_delete(fromID);
-
-            //if hypster is used, also delete context from its local contexts.
-            if (mipster == 0)
-                doDelete(fromID);
-
-            //if context list is now empty, then terminate
-            if (usedContexts == (int *) 0) {
-                return exceptionParameter;
-            }
-            //otherwise: schedule other process. TODO: make this more fair
-            else
-                toID = getID(usedContexts);
-
-        }
+      }
         //If there is a timer or yield interrupt, then re-schedule
-        else if (exceptionNumber == EXCEPTION_YIELD) {
-            toID = scheduleRoundRobin(fromID);
-          //print((int *) "handled yield: ");
-          //printInteger(selfie_ID());
-          //println();
-        }
-        else if (exceptionNumber == EXCEPTION_TIMER) {
-            toID = scheduleRoundRobin(fromID);
-          //print((int *) "handled TIMER: ");
-          //printInteger(selfie_ID());
-          //println();
-        }
-        else {
-            print(binaryName);
-            print((int *) ": context ");
-            printInteger(getID(fromContext));
-            print((int *) " throws uncaught ");
-            printStatus(savedStatus);
-            println();
-            return -1;
-        }
+      else if (exceptionNumber == EXCEPTION_YIELD) {
+        toID = scheduleRoundRobin(fromID);
+      } else if (exceptionNumber == EXCEPTION_TIMER) {
+        toID = scheduleRoundRobin(fromID);
+      } else {
+        print(binaryName);
+        print((int *) ": context ");
+        printInteger(getID(fromContext));
+        print((int *) " thread ");
+        printInteger(getThreadID(getCurrentThread(fromContext)));
+        print((int *) " throws uncaught ");
+        printStatus(savedStatus);
+        println();
+        return -1;
+      }
     }
   }
 }
@@ -7829,7 +7826,7 @@ int boot(int argc, int* argv) {
         up_loadArguments(getPT(usedContexts), argc, argv);
 
         //TODO RUPI: implement proper threadForking and kick context copying
-        //doThreadFork(usedContexts, getCurrentThread(usedContexts));
+        //doThreadFork(usedContexts, getCurrentThread(usedContexts))
 
         // propagate page table of initial context to microkernel boot level
         down_mapPageTable(usedContexts);
