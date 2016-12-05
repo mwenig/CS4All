@@ -908,7 +908,9 @@ int debug_switch = 1;
 int debug_status = 0;
 int debug_delete = 1;
 int debug_map    = 0;
-int debug_thread = 1;
+int debug_threadFork = 0;
+int debug_scheduling = 0;
+int debug_yield = 0;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -5490,12 +5492,14 @@ void emitYield() {
 }
 
 void implementYield() {
-  print((int*)"context ");
-  printInteger(getID(currentContext));
-  print((int*)" thread ");
-  printInteger(getThreadID(getCurrentThread(currentContext)));
-  print((int *) " yields");
-  println();
+  if(debug_yield) {
+    print((int *) "context ");
+    printInteger(getID(currentContext));
+    print((int *) " thread ");
+    printInteger(getThreadID(getCurrentThread(currentContext)));
+    print((int *) " yields");
+    println();
+  }
   throwException(EXCEPTION_YIELD, 0);
 }
 
@@ -5623,7 +5627,7 @@ void doThreadFork(int *toContext, int *fromThread) {
   int vAddressFromThread;
   int SP_from;
 
-  if (debug_thread) {
+  if (debug_threadFork) {
     print((int *) "forking thread ");
     printInteger(getThreadID(fromThread));
     print((int *) " of context ");
@@ -5654,19 +5658,21 @@ void doThreadFork(int *toContext, int *fromThread) {
   }
 
   //copy stack from "fromThread" to "newThread"
-  vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
-  vAddressNewThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD;
+  vAddressFromThread = VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
+  vAddressNewThread = VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD;
   SP_from = *(tlb(getPT(toContext), VIRTUALMEMORYSIZE - WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD));
 
 
-  while (vAddressFromThread > SP_from) {
-    print((int *) "data: ");
-    printInteger(*(tlb(getPT(toContext), vAddressFromThread)));
+  while (vAddressFromThread >= SP_from) {
 
     mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, *(tlb(getPT(toContext), vAddressFromThread)));
+
     vAddressFromThread = vAddressFromThread - WORDSIZE;
-    vAddressNewThread = vAddressNewThread - WORDSIZE; //i mean this "... - 1" from the comment below
-    if (debug_thread) {
+    vAddressNewThread = vAddressNewThread - WORDSIZE;
+
+    if (debug_threadFork) {
+      print((int *) "data ");
+      printInteger(*(tlb(getPT(toContext), vAddressFromThread)));
       print((int *) " copied from address: ");
       printInteger(vAddressFromThread);
       print((int *) " to address: ");
@@ -5794,7 +5800,7 @@ int scheduleRoundRobin(int fromID) {
   }
   setCurrThread(nextContext, nextThread);
 
-  if (debug_thread){
+  if (debug_scheduling){
     print((int*) "next context ");
     printInteger(getID(nextContext));
     print((int*) " and thread ");

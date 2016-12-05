@@ -42,7 +42,6 @@ int main(int argc, int *argv) {
 
     *start = 0;
 
-    forkThread();
     yield();
 
     *ptr = malloc(20);
@@ -53,7 +52,6 @@ int main(int argc, int *argv) {
         i = i + 1;
     }
 
-    forkThread();
     yield();
 
     *start = *start + 1;
