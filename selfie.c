@@ -835,7 +835,7 @@ void emitYield();
 void implementYield();
 
 void emitForkThread();
-void implementForkThread();
+void implementThreadFork();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -869,11 +869,15 @@ void emitSwitch();
 int  doSwitch(int toID, int threadID);
 void implementSwitch();
 int  mipster_switch(int toID, int threadID);
-int selfie_switch(int toID, int threadID);
+int  selfie_switch(int toID, int threadID);
+
+void emitThreadFork();
+int  mipster_threadFork(int contextID, int threadID);
+int  selfie_threadFork(int contextID, int threadID);
 
 int scheduleRoundRobin(int fromID);
 
-void doThreadFork(int* context, int* thread);
+void doThreadFork(int context, int thread);
 
 void emitStatus();
 void implementStatus();
@@ -904,13 +908,14 @@ void implementShmClose();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 1;
+int debug_switch = 0;
 int debug_status = 0;
 int debug_delete = 1;
 int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
+int debug_runOrHost = 0;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -4203,6 +4208,7 @@ void selfie_compile() {
   emitForkThread();
   emitCreate();
   emitSwitch();
+  emitThreadFork();
   emitStatus();
   emitDelete();
   emitMap();
@@ -5506,16 +5512,13 @@ void implementYield() {
 void emitForkThread() {
     createSymbolTableEntry(LIBRARY_TABLE, (int*)"forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
-void implementForkThread() {
-    doThreadFork(currentContext, getCurrentThread(currentContext));
-    //TODO RUPI: fork the thread
-}
+
 
 
 // -----------------------------------------------------------------
@@ -5601,7 +5604,7 @@ int selfie_create() {
 void emitSwitch() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_switch", 0, PROCEDURE, INT_T, 0, binaryLength);
 
-  emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of context to which we switch
+  emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of thread to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
     // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
@@ -5617,18 +5620,48 @@ void emitSwitch() {
   emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
+void emitThreadFork() {
+  createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_threadFork", 0, PROCEDURE, INT_T, 0, binaryLength);
+
+  emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of thread to which we switch
+  emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+
+  // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
+  emitIFormat(OP_LW, REG_SP, REG_A0, 0); // ID of context to which we switch
+  emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+  // save ID of context from which we are switching here in return register
+  emitRFormat(OP_SPECIAL, REG_ZR, REG_V1, REG_V0, FCT_ADDU);
+
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementThreadFork() {
+  doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
+  *(registers+REG_V0) = 0;
+  //TODO RUPI: fork the thread
+}
 
 // the implementFork just done right
 // currently this copies everything, including shmo-pointers
-void doThreadFork(int *toContext, int *fromThread) {
+void doThreadFork(int contextID, int threadID) {
   int *newThread;
   int i;
   int vAddressNewThread;
   int vAddressFromThread;
   int SP_from;
+  int* toContext;
+  int* fromThread;
+
+  toContext = findContext(contextID, usedContexts);
+  fromThread = findThread(getThreads(toContext), threadID);
 
   if (debug_threadFork) {
-    print((int *) "forking thread ");
+    printInteger(selfie_ID());
+    print((int *) " forking thread ");
     printInteger(getThreadID(fromThread));
     print((int *) " of context ");
     printInteger(getID(toContext));
@@ -5692,11 +5725,14 @@ void doThreadFork(int *toContext, int *fromThread) {
 int doSwitch(int toID, int threadID) {
   int fromID;
   int* toContext;
+  int* toThread;
 
   fromID = getID(currentContext);
 
   toContext = findContext(toID, usedContexts);
-  setCurrThread(toContext, findThread(getThreads(toContext), threadID));
+  toThread = findThread(getThreads(toContext), threadID);
+
+  setCurrThread(toContext, toThread);
 
   if (toContext != (int*) 0) {
     switchContext(currentContext, toContext);
@@ -5779,6 +5815,24 @@ int selfie_switch(int toID, int threadID) {
     return mipster_switch(toID, threadID);
   else
     return hypster_switch(toID, threadID);
+}
+
+int mipster_threadFork(int contextID, int threadID) {
+  doThreadFork(contextID, threadID);
+  return 0;
+}
+
+int hypster_threadFork(int contextID, int threadID) {
+  // this procedure is only executed at boot level zero
+  return mipster_threadFork(contextID, threadID);
+}
+
+int selfie_threadFork(int contextID, int threadID){
+  if(mipster){
+    return mipster_threadFork(contextID, threadID);
+  } else {
+    return hypster_threadFork(contextID, threadID);
+  }
 }
 
 int scheduleRoundRobin(int fromID) {
@@ -6456,8 +6510,6 @@ void fct_syscall() {
       implementID();
     else if (*(registers+REG_V0) == SYSCALL_YIELD)
         implementYield();
-    else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD)
-        implementForkThread();
     else if (*(registers+REG_V0) == SYSCALL_CREATE)
       implementCreate();
     else if (*(registers+REG_V0) == SYSCALL_SWITCH)
@@ -6477,7 +6529,7 @@ void fct_syscall() {
     else if (*(registers+REG_V0) == SYSCALL_SHMS)
       implementShmSize();
     else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD)
-        implementForkThread();
+      implementThreadFork();
     else {
       pc = pc - WORDSIZE;
 
@@ -7799,6 +7851,16 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
   int toThreadID = 0;
 
   while (1) {
+    toThreadID = getThreadID(getCurrentThread(usedContexts));
+
+    if(debug_runOrHost) {
+      printInteger(selfie_ID());
+      print((int *) " runOrHostUntilExitWithPageFaultHandling: toID ");
+      printInteger(toID);
+      print((int *) " threadID ");
+      printInteger(toThreadID);
+      println();
+    }
 
     fromID = selfie_switch(toID, toThreadID);
     fromContext = findContext(fromID, usedContexts);
@@ -7807,7 +7869,6 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
     if (getParent(fromContext) != selfie_ID()) {
       // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
       toID = getParent(fromContext);
-      toThreadID = 0;
 
       if (findContext(toID, usedContexts) == (int *) 0)
         return 1;
@@ -7842,17 +7903,13 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
           //otherwise: schedule other process. TODO: make this more fair
         else {
           toID = getID(usedContexts);
-          toThreadID = getThreadID(getCurrentThread(usedContexts));
         }
-
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
         toID = scheduleRoundRobin(fromID);
-        toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
       } else if (exceptionNumber == EXCEPTION_TIMER) {
         toID = scheduleRoundRobin(fromID);
-        toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
       } else {
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
@@ -7963,7 +8020,8 @@ int boot(int argc, int* argv) {
   counter = 1;
   while (counter < INSTANCE_COUNT) {
     //TODO RUPI: implement proper threadForking and kick context copying
-    doThreadFork(usedContexts, getCurrentThread(usedContexts));
+    //doThreadFork(usedContexts, getCurrentThread(usedContexts));
+    selfie_threadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
     counter = counter + 1;
   }
 
