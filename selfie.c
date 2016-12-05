@@ -834,6 +834,7 @@ void implementMalloc();
 void emitYield();
 void implementYield();
 
+void emitForkThread();
 void implementForkThread();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
@@ -865,10 +866,10 @@ void implementCreate();
 int selfie_create();
 
 void emitSwitch();
-int  doSwitch(int toID);
+int  doSwitch(int toID, int threadID);
 void implementSwitch();
-int  mipster_switch(int toID);
-int selfie_switch(int toID);
+int  mipster_switch(int toID, int threadID);
+int selfie_switch(int toID, int threadID);
 
 int scheduleRoundRobin(int fromID);
 
@@ -879,9 +880,9 @@ void implementStatus();
 int selfie_status();
 
 void emitDelete();
-void doDelete(int ID);
+void doDelete(int ID, int threadID);
 void implementDelete();
-void selfie_delete(int ID);
+void selfie_delete(int ID, int threadID);
 
 void emitMap();
 void doMap(int ID, int page, int frame);
@@ -903,10 +904,11 @@ void implementShmClose();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 0;
+int debug_switch = 1;
 int debug_status = 0;
-int debug_delete = 0;
+int debug_delete = 1;
 int debug_map    = 0;
+int debug_thread = 1;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -961,6 +963,8 @@ int debug_tlb = 0;
 int MEGABYTE = 1048576;
 
 int VIRTUALMEMORYSIZE = 67108864; // 64MB of virtual memory
+int STACKSIZEPERTHREAD = 1048576; //  1MB of stack per thread = 2^20
+
 
 int WORDSIZE = 4; // must be the same as SIZEOFINT and SIZEOFINTSTAR
 
@@ -1267,12 +1271,13 @@ int* allocateContext(int ID, int parentID);
 int* createContext(int ID, int parentID, int* in);
 
 int* findContext(int ID, int* in);
+int* findThread(int* threads, int id);
 
 void switchContext(int* from, int* to);
 
 void freeContext(int* context);
 int* deleteContext(int* context, int* from);
-void deleteThread(int* context, int* thread);
+void deleteThread(int* fromContext, int* thread);
 
 void mapPage(int* table, int page, int frame);
 
@@ -1295,28 +1300,20 @@ void mapPage(int* table, int page, int frame);
 int* getNextContext(int* context)  { return (int*) *context; }
 int* getPrevContext(int* context)  { return (int*) *(context + 1); }
 int  getID(int* context)           { return        *(context + 2); }
-int  getPC(int* context)           { return        *(context + 3); }
-int* getRegs(int* context)         { return (int*) *(context + 4); }
-int  getRegHi(int* context)        { return        *(context + 5); }
-int  getRegLo(int* context)        { return        *(context + 6); }
-int* getPT(int* context)           { return (int*) *(context + 7); }
-int  getBreak(int* context)        { return        *(context + 8); }
-int  getParent(int* context)       { return        *(context + 9); }
-int* getThreads(int* context)      { return (int*) *(context + 10); }
-int* getCurrentThread(int* context){ return (int*) *(context + 11); }
+int* getPT(int* context)           { return (int*) *(context + 3); }
+int  getBreak(int* context)        { return        *(context + 4); }
+int  getParent(int* context)       { return        *(context + 5); }
+int* getThreads(int* context)      { return (int*) *(context + 6); }
+int* getCurrentThread(int* context){ return (int*) *(context + 7); }
 
 void setNextContext(int* context, int* next)     { *context       = (int) next; }
 void setPrevContext(int* context, int* prev)     { *(context + 1) = (int) prev; }
 void setID(int* context, int id)                 { *(context + 2) = id; }
-void setPC(int* context, int pc)                 { *(context + 3) = pc; }
-void setRegs(int* context, int* regs)            { *(context + 4) = (int) regs; }
-void setRegHi(int* context, int reg_hi)          { *(context + 5) = reg_hi; }
-void setRegLo(int* context, int reg_lo)          { *(context + 6) = reg_lo; }
-void setPT(int* context, int* pt)                { *(context + 7) = (int) pt; }
-void setBreak(int* context, int brk)             { *(context + 8) = brk; }
-void setParent(int* context, int id)             { *(context + 9) = id; }
-void setThreads(int* context, int* threads)      { *(context + 10)= (int) threads; }
-void setCurrThread(int* context, int* currThread){ *(context + 11)= (int) currThread; }
+void setPT(int* context, int* pt)                { *(context + 3) = (int) pt; }
+void setBreak(int* context, int brk)             { *(context + 4) = brk; }
+void setParent(int* context, int id)             { *(context + 5) = id; }
+void setThreads(int* context, int* threads)      { *(context + 6) = (int) threads; }
+void setCurrThread(int* context, int* currThread){ *(context + 7) = (int) currThread; }
 
 // thread struct:
 // +---+--------+
@@ -4201,6 +4198,7 @@ void selfie_compile() {
 
   emitID();
   emitYield();
+  emitForkThread();
   emitCreate();
   emitSwitch();
   emitStatus();
@@ -5492,14 +5490,26 @@ void emitYield() {
 }
 
 void implementYield() {
-    printInteger(getID(currentContext));
-    print((int*)" yields");
-    println();
-    throwException(EXCEPTION_YIELD, 0);
+  print((int*)"context ");
+  printInteger(getID(currentContext));
+  print((int*)" thread ");
+  printInteger(getThreadID(getCurrentThread(currentContext)));
+  print((int *) " yields");
+  println();
+  throwException(EXCEPTION_YIELD, 0);
+}
+
+void emitForkThread() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*)"forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 void implementForkThread() {
-
+    doThreadFork(currentContext, getCurrentThread(currentContext));
     //TODO RUPI: fork the thread
 }
 
@@ -5587,6 +5597,9 @@ int selfie_create() {
 void emitSwitch() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_switch", 0, PROCEDURE, INT_T, 0, binaryLength);
 
+  emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of context to which we switch
+  emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+
     // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
   emitIFormat(OP_LW, REG_SP, REG_A0, 0); // ID of context to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
@@ -5601,18 +5614,83 @@ void emitSwitch() {
 }
 
 
-//the implementFork just done right
-void doThreadFork(int* context, int* thread) {
-    //TODO RUPI: implement forking a thread by function call
+// the implementFork just done right
+// currently this copies everything, including shmo-pointers
+void doThreadFork(int *toContext, int *fromThread) {
+  int *newThread;
+  int i;
+  int vAddressNewThread;
+  int vAddressFromThread;
+  int SP_from;
+
+  if (debug_thread) {
+    print((int *) "forking thread ");
+    printInteger(getThreadID(fromThread));
+    print((int *) " of context ");
+    printInteger(getID(toContext));
+    println();
+  }
+  newThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
+
+  // append list accordingly
+  setPrevThread(newThread, (int *) 0);
+  setNextThread(newThread, getThreads(toContext));
+  setPrevThread(getThreads(toContext), newThread);
+  setThreadID(newThread, getThreadID(getThreads(toContext)) + 1);
+
+  setThreads(toContext, newThread);
+
+  //set pc and stuff
+  setThreadPC(newThread, getThreadPC(fromThread));
+  setThreadRegLo(newThread, getThreadRegLo(fromThread));
+  setThreadRegHi(newThread, getThreadRegHi(fromThread));
+
+  //copy all regs
+  setThreadRegs(newThread, zalloc(NUMBEROFREGISTERS * WORDSIZE));
+  i = 0;
+  while (i < NUMBEROFREGISTERS) {
+    *(getThreadRegs(newThread) + i) = *(getThreadRegs(fromThread) + i);
+    i = i + 1;
+  }
+
+  //copy stack from "fromThread" to "newThread"
+  vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
+  vAddressNewThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD;
+  SP_from = *(tlb(getPT(toContext), VIRTUALMEMORYSIZE - WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD));
+
+
+  while (vAddressFromThread > SP_from) {
+    print((int *) "data: ");
+    printInteger(*(tlb(getPT(toContext), vAddressFromThread)));
+
+    mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, *(tlb(getPT(toContext), vAddressFromThread)));
+    vAddressFromThread = vAddressFromThread - WORDSIZE;
+    vAddressNewThread = vAddressNewThread - WORDSIZE; //i mean this "... - 1" from the comment below
+    if (debug_thread) {
+      print((int *) " copied from address: ");
+      printInteger(vAddressFromThread);
+      print((int *) " to address: ");
+      printInteger(vAddressNewThread);
+      print((int *) " with from-SP: ");
+      printInteger(SP_from);
+      println();
+    }
+  }
+
+  //set SP appropriately
+  *(getThreadRegs(newThread) + REG_SP) = vAddressNewThread;
+
+  //TODO RUPI: implement forking a thread by function call
 }
 
-int doSwitch(int toID) {
+int doSwitch(int toID, int threadID) {
   int fromID;
   int* toContext;
 
   fromID = getID(currentContext);
 
   toContext = findContext(toID, usedContexts);
+  setCurrThread(toContext, findThread(getThreads(toContext), threadID));
 
   if (toContext != (int*) 0) {
     switchContext(currentContext, toContext);
@@ -5627,6 +5705,8 @@ int doSwitch(int toID) {
       printInteger(fromID);
       print((int*) " to context ");
       printInteger(toID);
+      print((int*) " thread ");
+      printInteger(getThreadID(getCurrentThread(toContext)));
       println();
     }
   } else if (debug_switch) {
@@ -5646,20 +5726,20 @@ void implementSwitch() {
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
   // before evaluating the rvalue doSwitch()
-  fromID = doSwitch(*(registers+REG_A0));
+  fromID = doSwitch(*(registers+REG_A0), *(registers+REG_A1));
 
 
   // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
   *(registers+REG_V1) = fromID;
 }
 
-int mipster_switch(int toID) {
+int mipster_switch(int toID, int threadID) {
   int fromID;
 
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
   // before evaluating the rvalue doSwitch()
-  fromID = doSwitch(toID);
+  fromID = doSwitch(toID, threadID);
 
   // basically mipster only switches between processes and OS. ALWAYS. Otherwise we made something wrong!
   // this is valid to say, since the mipster DOESN'T do the scheduling. Since NOW at this line of code we must schedule
@@ -5683,16 +5763,16 @@ int mipster_switch(int toID) {
   return getID(currentContext);
 }
 
-int hypster_switch(int toID) {
+int hypster_switch(int toID, int threadID) {
   // this procedure is only executed at boot level zero
-  return mipster_switch(toID);
+  return mipster_switch(toID, threadID);
 }
 
-int selfie_switch(int toID) {
+int selfie_switch(int toID, int threadID) {
   if (mipster)
-    return mipster_switch(toID);
+    return mipster_switch(toID, threadID);
   else
-    return hypster_switch(toID);
+    return hypster_switch(toID, threadID);
 }
 
 int scheduleRoundRobin(int fromID) {
@@ -5714,6 +5794,13 @@ int scheduleRoundRobin(int fromID) {
   }
   setCurrThread(nextContext, nextThread);
 
+  if (debug_thread){
+    print((int*) "next context ");
+    printInteger(getID(nextContext));
+    print((int*) " and thread ");
+    printInteger(getThreadID(nextThread));
+    println();
+  }
 
   return getID(nextContext);
 }
@@ -5763,6 +5850,9 @@ int selfie_status() {
 void emitDelete() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_delete", 0, PROCEDURE, VOID_T, 0, binaryLength);
 
+  emitIFormat(OP_LW, REG_SP, REG_A1, 0); // thread ID
+  emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+
   emitIFormat(OP_LW, REG_SP, REG_A0, 0); // context ID
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
@@ -5772,19 +5862,31 @@ void emitDelete() {
   emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
-void doDelete(int ID) {
+void doDelete(int ID, int threadID) {
   int* context;
   int* thread;
 
   context = findContext(ID, usedContexts);
 
   if (context != (int*) 0) {
-    thread = getCurrentThread(context);
+    thread = findThread(getThreads(context),threadID);
     if (thread != (int*) 0){
       //delete the currentThread
+      if (debug_delete){
+        print((int*) "deleting thread ");
+        printInteger(getThreadID(thread));
+        print((int*) " from context ");
+        printInteger(getID(context));
+        println();
+      }
       deleteThread(context, thread);
       thread = getThreads(context);
       if (thread == (int*) 0){
+        if (debug_delete){
+          print((int*) "no threads left, delete context ");
+          printInteger(getID(context));
+          println();
+        }
         //no other threads?? delete context too
         usedContexts = deleteContext(context, usedContexts);
       }
@@ -5816,19 +5918,19 @@ void doDelete(int ID) {
 }
 
 void implementDelete() {
-  doDelete(*(registers+REG_A0));
+  doDelete(*(registers+REG_A0), *(registers+REG_A1));
 }
 
-void hypster_delete(int ID) {
+void hypster_delete(int ID, int threadID) {
   // this procedure is only executed at boot level zero
-  doDelete(ID);
+  doDelete(ID, threadID);
 }
 
-void selfie_delete(int ID) {
+void selfie_delete(int ID, int threadID) {
   if (mipster)
-    doDelete(ID);
+    doDelete(ID, threadID);
   else
-    hypster_delete(ID);
+    hypster_delete(ID, threadID);
 }
 
 void emitMap() {
@@ -6368,6 +6470,8 @@ void fct_syscall() {
       implementShmMap();
     else if (*(registers+REG_V0) == SYSCALL_SHMS)
       implementShmSize();
+    else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD)
+        implementForkThread();
     else {
       pc = pc - WORDSIZE;
 
@@ -7031,10 +7135,11 @@ void printStatus(int status) {
   if (exception == EXCEPTION_PAGEFAULT) {
     print((int*) " at ");
     printHexadecimal(parameter, 8);
-  } else if (exception == EXCEPTION_ADDRESSERROR){
-    print((int*) " at ");
-    printHexadecimal(parameter, 8);
   }
+  //else if (exception == EXCEPTION_ADDRESSERROR){
+  //  print((int*) " at ");
+  //  printHexadecimal(parameter, 8);
+  //}
 }
 
 void throwException(int exception, int parameter) {
@@ -7291,7 +7396,7 @@ int* allocateContext(int ID, int parentID) {
   int* mainThread;
 
   if (freeContexts == (int*) 0)
-    context = malloc(6 * SIZEOFINTSTAR + 6 * SIZEOFINT);
+    context = malloc(5 * SIZEOFINTSTAR + 3 * SIZEOFINT);
   else {
     context = freeContexts;
 
@@ -7305,14 +7410,9 @@ int* allocateContext(int ID, int parentID) {
 
   setID(context, ID);
 
-  //setPC(context, 0);
-
   // allocate zeroed memory for general purpose registers
   // TODO: reuse memory
   //setRegs(context, zalloc(NUMBEROFREGISTERS * WORDSIZE));
-
-  //setRegHi(context, 0);
-  //setRegLo(context, 0);
 
   // allocate zeroed memory for page table
   // TODO: save and reuse memory for page table
@@ -7364,6 +7464,22 @@ int* findContext(int ID, int* in) {
   return (int*) 0;
 }
 
+int* findThread(int* threads, int id) {
+  int* thread;
+
+  thread = threads;
+
+  while (thread != (int*) 0) {
+    if (getThreadID(thread) == id)
+      return thread;
+
+    thread = getNextThread(thread);
+  }
+
+  return (int*) 0;
+}
+
+
 void switchContext(int* from, int* to) {
   int* thread;
 
@@ -7393,15 +7509,15 @@ void freeContext(int* context) {
 }
 
 int* deleteContext(int* context, int* from) {
-  if (getNextContext(context) != (int*) 0)
+  if (getNextContext(context) != (int*) 0) {
     setPrevContext(getNextContext(context), getPrevContext(context));
-
+  }
   if (getPrevContext(context) != (int*) 0) {
     setNextContext(getPrevContext(context), getNextContext(context));
     setPrevContext(context, (int*) 0);
-  } else
+  } else {
     from = getNextContext(context);
-
+  }
   //todo delete shared objects by this thread
   //freeSharedMemoryForContext(getID(context))
 
@@ -7410,18 +7526,18 @@ int* deleteContext(int* context, int* from) {
   return from;
 }
 
-void deleteThread(int* from, int* thread){
-  if (getNextThread(thread) != (int*) 0)
+void deleteThread(int* fromContext, int* thread){
+  if (getNextThread(thread) != (int*) 0) {
     setPrevThread(getNextThread(thread), getPrevThread(thread));
-
+  }
   if (getPrevThread(thread) != (int*) 0) {
     setNextThread(getPrevThread(thread), getNextThread(thread));
     setPrevThread(thread, (int*) 0);
-  } else
-    setThreads(from, getNextThread(thread));
-
-  if(getCurrentThread(from) == thread){
-      setCurrThread(from, getNextThread(thread));
+  } else {
+    setThreads(fromContext, getNextThread(thread));
+  }
+  if(getCurrentThread(fromContext) == thread){
+      setCurrThread(fromContext, getThreads(fromContext));
   }
 
 }
@@ -7618,22 +7734,24 @@ void down_mapPageTable(int* context) {
 }
 
 int runUntilExitWithoutExceptionHandling(int toID) {
-    // works only with mipsters
-    int fromID;
-    int* fromContext;
-    int savedStatus;
-    int exceptionNumber;
+  // works only with mipsters
+  int fromID;
+  int *fromContext;
+  int savedStatus;
+  int exceptionNumber;
+  int toThreadID  = 0;
 
   while (1) {
-    fromID = mipster_switch(toID);
+    fromID = mipster_switch(toID, toThreadID);
 
     fromContext = findContext(fromID, usedContexts);
 
     // assert: fromContext must be in usedContexts (created here)
-    if (getParent(fromContext) != MIPSTER_ID)
+    if (getParent(fromContext) != MIPSTER_ID) {
       // switch to parent which is in charge of handling exceptions
       toID = getParent(fromContext);
-    else {
+      toThreadID = 0;
+    } else {
       // we are the parent in charge of handling exit exceptions
       savedStatus = doStatus();
 
@@ -7644,17 +7762,21 @@ int runUntilExitWithoutExceptionHandling(int toID) {
         return decodeExceptionParameter(savedStatus);
       else if (exceptionNumber != EXCEPTION_TIMER) {
         print(binaryName);
-        print((int *) ": context ");
+        print((int *) " - runUntilExitWithoutExceptionHandling: context ");
         printInteger(getID(fromContext));
         print((int *) " thread ");
         printInteger(getThreadID(getCurrentThread(fromContext)));
         print((int *) " throws uncaught ");
         printStatus(savedStatus);
+        print((int *) " with exceptionNumber ");
+        printInteger(exceptionNumber);
         println();
 
         return -1;
-      } else
+      } else {
         toID = fromID;
+        toThreadID = 0;
+      }
     }
   }
 }
@@ -7668,16 +7790,18 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
   int exceptionNumber;
   int exceptionParameter;
   int frame;
+  int toThreadID = 0;
 
   while (1) {
 
-    fromID = selfie_switch(toID);
+    fromID = selfie_switch(toID, toThreadID);
     fromContext = findContext(fromID, usedContexts);
 
     // assert: fromContext must be in usedContexts (created here)
     if (getParent(fromContext) != selfie_ID()) {
       // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
       toID = getParent(fromContext);
+      toThreadID = 0;
 
       if (findContext(toID, usedContexts) == (int *) 0)
         return 1;
@@ -7697,36 +7821,42 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         selfie_map(fromID, exceptionParameter, frame);
       } else if (exceptionNumber == EXCEPTION_EXIT) {
 
-
         //delete current context
-        selfie_delete(fromID);
+        toThreadID = getThreadID(getCurrentThread(fromContext));
+        selfie_delete(fromID, toThreadID);
 
         //if hypster is used, also delete context from its local contexts.
         if (mipster == 0)
-          doDelete(fromID);
+          doDelete(fromID, toThreadID);
 
         //if context list is now empty, then terminate
         if (usedContexts == (int *) 0) {
           return exceptionParameter;
         }
           //otherwise: schedule other process. TODO: make this more fair
-        else
+        else {
           toID = getID(usedContexts);
+          toThreadID = getThreadID(getCurrentThread(usedContexts));
+        }
 
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
         toID = scheduleRoundRobin(fromID);
+        toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
       } else if (exceptionNumber == EXCEPTION_TIMER) {
         toID = scheduleRoundRobin(fromID);
+        toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
       } else {
         print(binaryName);
-        print((int *) ": context ");
+        print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
         printInteger(getID(fromContext));
         print((int *) " thread ");
         printInteger(getThreadID(getCurrentThread(fromContext)));
         print((int *) " throws uncaught ");
         printStatus(savedStatus);
+        print((int*) " with exceptionNumber ");
+        printInteger(exceptionNumber);
         println();
         return -1;
       }
@@ -7810,28 +7940,26 @@ int boot(int argc, int* argv) {
 
   // resetting interpreter is only necessary for mipsters
   resetInterpreter();
-
   resetMicrokernel();
 
-    counter = 0;
-    while (counter < INSTANCE_COUNT) {
-        currentID = selfie_create();
+  currentID = selfie_create();
 
-        if (mipster == 0) {
-            // create duplicate of the initial context on our boot level
-            usedContexts = createContext(currentID, selfie_ID(), usedContexts);
-        }
+  if (usedContexts == (int*) 0){
+    // create duplicate of the initial context on our boot level
+    usedContexts = createContext(currentID, selfie_ID(), (int*) 0);
+  }
 
-        up_loadBinary(getPT(usedContexts));
-        up_loadArguments(getPT(usedContexts), argc, argv);
+  up_loadBinary(getPT(usedContexts));
+  up_loadArguments(getPT(usedContexts), argc, argv);
 
-        //TODO RUPI: implement proper threadForking and kick context copying
-        //doThreadFork(usedContexts, getCurrentThread(usedContexts))
+  down_mapPageTable(usedContexts);
 
-        // propagate page table of initial context to microkernel boot level
-        down_mapPageTable(usedContexts);
-        counter = counter + 1;
-    }
+  counter = 1;
+  while (counter < INSTANCE_COUNT) {
+    //TODO RUPI: implement proper threadForking and kick context copying
+    doThreadFork(usedContexts, getCurrentThread(usedContexts));
+    counter = counter + 1;
+  }
 
 
 

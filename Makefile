@@ -47,6 +47,12 @@ testC: selfie
 	diff -q selfie5.s selfie6.s
 	diff -q selfie3.m selfie5.m
 	diff -q selfie3.s selfie5.s
+	
+assign4: selfie
+	./selfie -c selfie.c -o selfie.m -m 2
+	./selfie -l selfie.m -c assign4test.c -o assign4test.m -m 2
+	./selfie -l assign4test.m -n 3 -m 10
+	./selfie -l selfie.m -m 10 -l assign4test.m -n 3 -y 2 
 
 assign3: selfie shmoTest
 	./selfie -c selfie.c -o selfie.m -m 2
