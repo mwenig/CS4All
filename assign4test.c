@@ -1,85 +1,114 @@
 //used for simple integer output in range [0 - 99];
+
+int* newLineBuffer;
+
 void dumbITOA(int number);
+void newLine();
+void boxedThreadFork();
+void boxedThreadFork1();
+
+void newLine(){
+  write(1, newLineBuffer, 1);
+}
+
+void boxedThreadFork(){
+  int someTmp;
+  int *moreTmp;
+
+  moreTmp = malloc(12);
+  someTmp = 22222;
+
+  boxedThreadFork1();
+
+  write(1, "works2", 6);
+  newLine();
+
+  someTmp = 11111;
+}
+
+void boxedThreadFork1(){
+  int someTmp;
+  int *moreTmp;
+
+  moreTmp = malloc(10);
+  someTmp = 3333;
+
+  forkThread();
+  yield();
+
+  write(1, "works1", 6);
+  newLine();
+
+  //someTmp = 4444;
+}
 
 void dumbITOA(int number) {
-    int i;
-    int *buff;
-    int tmp;
-    int ptr;
-    int div;
-    ptr = 0;
-    div = 100;
-    tmp = number;
-    buff = malloc(50);
+  int i;
+  int *buff;
+  int tmp;
+  int all;
+  int div;
+  all = 0;
+  div = 100;
+  tmp = number;
+  buff = malloc(50);
 
-    while (div != 0) {
-        *(buff + ptr) = (tmp / div) + 48;
-        tmp = tmp % div;
-        div = div / 10;
-        ptr = ptr + 1;
-    }
-    *(buff + ptr) = ' ';
-    write(1, buff, 20);
+  while (div != 0) {
+    *(buff + all) = (tmp / div) + 48;
+    tmp = tmp % div;
+    div = div / 10;
+    all = all + 4;
+  }
+  //*(buff + all) = ' ';
+  write(1, buff, 20);
 }
 
 int main(int argc, int *argv) {
-    int *buff;
-    int id;
-    int size;
-    int *start;
-    int *ptr;
-    int i;
+  int id;
+  int local;
+  int *all;
+  int *sub;
 
+  newLineBuffer = malloc(5);
+  *newLineBuffer = 10; //==newline
+  *(newLineBuffer + 1) = ' ';
 
-    buff = malloc(200);
-    *buff = 20;
+  newLine();
 
-    id = shm_open("/smem");
+  local = 0;
+  *all = malloc(20);
+  *all = 100;
+  //forkThread();
+  boxedThreadFork();
 
-    size = shm_size(id, 4096);
+  *sub = malloc(20);
+  *sub = 42;
 
-    start = (int*) shm_map((int*) 0, id);
+  local = local + 1;
+  *all = *all + 1;
+  *sub = *sub + 1;
 
-    *start = 0;
+  yield();
 
-    yield();
+  write(1, "local ", 6);
+  dumbITOA(local);
+  write(1, "sub ", 4);
+  dumbITOA(*sub);
+  write(1, "all ", 4);
+  dumbITOA(*all);
+  newLine();
 
-    *ptr = malloc(20);
-    *ptr = 42;
-    i = 0;
+  boxedThreadFork();
 
-    while (i < 500000) {
-        i = i + 1;
-    }
-
-    yield();
-
-    *start = *start + 1;
-    *ptr = *ptr + 1;
-    write(1,"start",5);
-    dumbITOA(*start);
-    write(1,"heap",4);
-    dumbITOA(*ptr);
-
-    i = 0;
-    while (i < 500000) {
-        i = i + 1;
-    }
-
-    yield();
-
-    shm_close(id);
-
-    yield();
-
-    *start = *start + 1;
-    write(1,"start",5);
-    dumbITOA(*start);
-
-    //id = shm_open("/smem");
-
-    //size = shm_size(409);
-
-    //start = (int*) shm_map((int*) 0, id);
+  local = local + 1;
+  *all = *all + 1;
+  *sub = *sub + 1;
+  write(1, "local ", 6);
+  dumbITOA(local);
+  write(1, "sub ", 4);
+  dumbITOA(*sub);
+  write(1, "all ", 4);
+  dumbITOA(*all);
+  newLine();
 
 }

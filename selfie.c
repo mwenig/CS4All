@@ -836,6 +836,7 @@ void implementYield();
 
 void emitForkThread();
 void implementThreadFork();
+void implementThreadForkAPI();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
@@ -866,7 +867,7 @@ void implementCreate();
 int selfie_create();
 
 void emitSwitch();
-int  doSwitch(int toID, int threadID);
+int  doSwitch(int toID, int toThreadID);
 void implementSwitch();
 int  mipster_switch(int toID, int threadID);
 int  selfie_switch(int toID, int threadID);
@@ -874,10 +875,11 @@ int  selfie_switch(int toID, int threadID);
 void emitThreadFork();
 int  mipster_threadFork(int contextID, int threadID);
 int  selfie_threadFork(int contextID, int threadID);
+int* createContextThread(int* context);
+int  doThreadFork(int context, int thread);
 
 int scheduleRoundRobin(int fromID);
-
-void doThreadFork(int context, int thread);
+int scheduleRoundRobinThread(int fromID);
 
 void emitStatus();
 void implementStatus();
@@ -907,15 +909,16 @@ void implementShmClose();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 0;
+int debug_create = 1;
 int debug_switch = 0;
+int debug_switch_SP = 1;
 int debug_status = 0;
-int debug_delete = 1;
+int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 0;
-int debug_scheduling = 0;
-int debug_yield = 0;
-int debug_runOrHost = 0;
+int debug_threadFork = 1;
+int debug_scheduling = 1;
+int debug_yield = 1;
+int debug_runOrHost = 1;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -929,6 +932,7 @@ int SYSCALL_SHMS   = 4909;
 int SYSCALL_SHMM   = 4910;
 int SYSCALL_SHMC   = 4911;
 int SYSCALL_FORK_THREAD = 4912;
+int SYSCALL_FORK_THREAD_API = 4913;
 
 
 
@@ -1312,15 +1316,17 @@ int  getBreak(int* context)        { return        *(context + 4); }
 int  getParent(int* context)       { return        *(context + 5); }
 int* getThreads(int* context)      { return (int*) *(context + 6); }
 int* getCurrentThread(int* context){ return (int*) *(context + 7); }
+int* getConPrevThread(int* context){ return (int*) *(context + 8); }
 
-void setNextContext(int* context, int* next)     { *context       = (int) next; }
-void setPrevContext(int* context, int* prev)     { *(context + 1) = (int) prev; }
-void setID(int* context, int id)                 { *(context + 2) = id; }
-void setPT(int* context, int* pt)                { *(context + 3) = (int) pt; }
-void setBreak(int* context, int brk)             { *(context + 4) = brk; }
-void setParent(int* context, int id)             { *(context + 5) = id; }
-void setThreads(int* context, int* threads)      { *(context + 6) = (int) threads; }
-void setCurrThread(int* context, int* currThread){ *(context + 7) = (int) currThread; }
+void setNextContext(int* context, int* next)        { *context       = (int) next; }
+void setPrevContext(int* context, int* prev)        { *(context + 1) = (int) prev; }
+void setID(int* context, int id)                    { *(context + 2) = id; }
+void setPT(int* context, int* pt)                   { *(context + 3) = (int) pt; }
+void setBreak(int* context, int brk)                { *(context + 4) = brk; }
+void setParent(int* context, int id)                { *(context + 5) = id; }
+void setThreads(int* context, int* threads)         { *(context + 6) = (int) threads; }
+void setCurrThread(int* context, int* currThread)   { *(context + 7) = (int) currThread; }
+void setConPrevThread(int* context, int* prevThread){ *(context + 8) = (int) prevThread; }
 
 // thread struct:
 // +---+--------+
@@ -5512,7 +5518,7 @@ void implementYield() {
 void emitForkThread() {
     createSymbolTableEntry(LIBRARY_TABLE, (int*)"forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD);
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD_API);
     emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
     emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
@@ -5626,28 +5632,40 @@ void emitThreadFork() {
   emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of thread to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
-  // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
   emitIFormat(OP_LW, REG_SP, REG_A0, 0); // ID of context to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
   emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD);
   emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-  // save ID of context from which we are switching here in return register
+  // save ID of thread from which we created in the return register
   emitRFormat(OP_SPECIAL, REG_ZR, REG_V1, REG_V0, FCT_ADDU);
 
   emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 void implementThreadFork() {
-  doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
-  *(registers+REG_V0) = 0;
+  int ret;
+  print((int *) "hypster_threadFork");
+  ret = doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
+  *(registers+REG_V1) = ret;
   //TODO RUPI: fork the thread
 }
 
+void implementThreadForkAPI() {
+  int ret;
+  print((int *) "threadFork_API");
+  println();
+  setThreadPC(getCurrentThread(currentContext), pc);
+  ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
+  *(registers+REG_V1) = ret;
+  //TODO RUPI: fork the thread
+}
+
+
 // the implementFork just done right
 // currently this copies everything, including shmo-pointers
-void doThreadFork(int contextID, int threadID) {
+int doThreadFork(int contextID, int threadID) {
   int *newThread;
   int i;
   int vAddressNewThread;
@@ -5655,6 +5673,8 @@ void doThreadFork(int contextID, int threadID) {
   int SP_from;
   int* toContext;
   int* fromThread;
+  int threadsSP_diff;
+  int threadSP_fixupChain;
 
   toContext = findContext(contextID, usedContexts);
   fromThread = findThread(getThreads(toContext), threadID);
@@ -5667,18 +5687,18 @@ void doThreadFork(int contextID, int threadID) {
     printInteger(getID(toContext));
     println();
   }
-  newThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
 
-  // append list accordingly
-  setPrevThread(newThread, (int *) 0);
-  setNextThread(newThread, getThreads(toContext));
-  setPrevThread(getThreads(toContext), newThread);
-  setThreadID(newThread, getThreadID(getThreads(toContext)) + 1);
+  newThread = createContextThread(toContext);
 
-  setThreads(toContext, newThread);
+  if (debug_threadFork) {
+    printInteger(selfie_ID());
+    print((int *) " PC old ");
+    printInteger(getThreadPC(fromThread));
+    println();
+  }
 
   //set pc and stuff
-  setThreadPC(newThread, getThreadPC(fromThread));
+  setThreadPC(newThread, getThreadPC(fromThread) + 1 *  WORDSIZE);
   setThreadRegLo(newThread, getThreadRegLo(fromThread));
   setThreadRegHi(newThread, getThreadRegHi(fromThread));
 
@@ -5691,17 +5711,24 @@ void doThreadFork(int contextID, int threadID) {
   }
 
   //copy stack from "fromThread" to "newThread"
-  vAddressFromThread = VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
-  vAddressNewThread = VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD;
-  SP_from = *(tlb(getPT(toContext), VIRTUALMEMORYSIZE - WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD));
+  vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
+  vAddressNewThread  = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread ) * STACKSIZEPERTHREAD;
+  threadsSP_diff = (getThreadID(newThread) - getThreadID(fromThread ))* STACKSIZEPERTHREAD;
+  //+ 2 WORDSIZE SINCE WE DID A SYSCALL WITH 2 ARGUMENTS!!!!!!!!!!!! don't copy that syscall stuff (== SHIT)!
+  SP_from = *(getThreadRegs(fromThread) + REG_SP) + 2 * WORDSIZE;
 
-
-  while (vAddressFromThread >= SP_from) {
+  if (debug_threadFork) {
+    print((int*) "fromSP: ");
+    printInteger(SP_from);
+    print((int*) " fromTopSP: ");
+    printInteger(vAddressFromThread);
+    println();
+  }
+  //copy top down
+  //TODO RUPI: get size of stack for current method
+  while (vAddressFromThread >= SP_from - 15*WORDSIZE) { //max 15 arguments in the current method
 
     mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, *(tlb(getPT(toContext), vAddressFromThread)));
-
-    vAddressFromThread = vAddressFromThread - WORDSIZE;
-    vAddressNewThread = vAddressNewThread - WORDSIZE;
 
     if (debug_threadFork) {
       print((int *) "data ");
@@ -5710,28 +5737,100 @@ void doThreadFork(int contextID, int threadID) {
       printInteger(vAddressFromThread);
       print((int *) " to address: ");
       printInteger(vAddressNewThread);
-      print((int *) " with from-SP: ");
-      printInteger(SP_from);
       println();
     }
+
+    vAddressFromThread = vAddressFromThread - WORDSIZE;
+    vAddressNewThread = vAddressNewThread - WORDSIZE;
   }
 
-  //set SP appropriately
-  *(getThreadRegs(newThread) + REG_SP) = vAddressNewThread;
+  //set new SP pointer
+  *(getThreadRegs(newThread) + REG_SP) = SP_from - threadsSP_diff;
 
+  //fixupchain for stack - bottom to top (innermost method up to outermost method == main.. main is handled extra)
+  vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
+  vAddressNewThread  = SP_from - threadsSP_diff;
+  threadSP_fixupChain = SP_from;
+
+  if (debug_threadFork) {
+    print((int *) "start fixupchain: ");
+    printInteger(threadSP_fixupChain);
+    println();
+  }
+
+  //TODO RUPI  assumption of max 13 arguments in the main method - do pls something better here!!
+  while (threadSP_fixupChain < vAddressFromThread - WORDSIZE * 13){
+    //get the value of "fromThread"
+    if (debug_threadFork) {
+      print((int *) "fromThreadSP-Chain: data ");
+      printInteger(threadSP_fixupChain);
+    }
+
+    threadSP_fixupChain = *(tlb(getPT(toContext), threadSP_fixupChain));
+
+    if (debug_threadFork) {
+      print((int *) " on address ");
+      printInteger(threadSP_fixupChain);
+      print((int *) " - new data ");
+      printInteger(threadSP_fixupChain - threadsSP_diff);
+    }
+
+    mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, threadSP_fixupChain - threadsSP_diff);
+
+    if (debug_threadFork) {
+      print((int *) " written to ");
+      printInteger(vAddressNewThread);
+      println();
+    }
+
+    vAddressNewThread = threadSP_fixupChain - threadsSP_diff;
+  }
+
+  //SP fixupchain end for the main method
+  threadSP_fixupChain = *(tlb(getPT(toContext), threadSP_fixupChain + 2* WORDSIZE));
+  mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread + 2 * WORDSIZE, threadSP_fixupChain - threadsSP_diff);
+  vAddressNewThread = threadSP_fixupChain - threadsSP_diff + 2 * WORDSIZE;
+
+  if (debug_threadFork) {
+    print((int *) "MAIN fromThreadSP-Chain: ");
+    printInteger(threadSP_fixupChain);
+    print((int *) " calculated to ");
+    printInteger(vAddressNewThread);
+    println();
+  }
+
+  mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
+
+  //set SP appropriately
+  //mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
+  //if (debug_threadFork) {
+  //  print((int *) "set StackPointer ");
+  //  printInteger(VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
+  //  print((int *) " to address: ");
+  //  printInteger(vAddressNewThread);
+  //  println();
+  //}
+
+
+  down_mapPageTable(toContext);
+
+
+  return getThreadID(newThread);
   //TODO RUPI: implement forking a thread by function call
 }
 
-int doSwitch(int toID, int threadID) {
+int doSwitch(int toID, int toThreadID) {
   int fromID;
   int* toContext;
   int* toThread;
 
   fromID = getID(currentContext);
+  if (currentContext != (int*) 0){
+    setConPrevThread(currentContext, getCurrentThread(currentContext));
+  }
 
   toContext = findContext(toID, usedContexts);
-  toThread = findThread(getThreads(toContext), threadID);
-
+  toThread = findThread(getThreads(toContext), toThreadID);
   setCurrThread(toContext, toThread);
 
   if (toContext != (int*) 0) {
@@ -5818,12 +5917,20 @@ int selfie_switch(int toID, int threadID) {
 }
 
 int mipster_threadFork(int contextID, int threadID) {
-  doThreadFork(contextID, threadID);
-  return 0;
+  int retID;
+
+  print((int *) "mipster_threadFork");
+
+  // this procedure is only executed at boot level zero
+  retID = doThreadFork(contextID, threadID);
+
+  // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
+  //*(registers+REG_V1) = retID;
+
+  return retID;
 }
 
 int hypster_threadFork(int contextID, int threadID) {
-  // this procedure is only executed at boot level zero
   return mipster_threadFork(contextID, threadID);
 }
 
@@ -5835,10 +5942,50 @@ int selfie_threadFork(int contextID, int threadID){
   }
 }
 
+int* createContextThread(int* context) {
+  int* newThread;
+
+  newThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
+
+  // append list accordingly
+  setPrevThread(newThread, (int *) 0);
+  setNextThread(newThread, getThreads(context));
+  setPrevThread(getThreads(context), newThread);
+  setThreadID(newThread, getThreadID(getThreads(context)) + 1);
+
+  setThreads(context, newThread);
+
+  return newThread;
+}
+
+int scheduleRoundRobinThread(int fromID) {
+  int *currContext;
+  int *nextThread;
+  int toThreadID;
+  //get current context
+  currContext = findContext(fromID, usedContexts);
+
+  //schedule to the next thread
+  nextThread = getNextThread(getCurrentThread(currContext));
+  if(nextThread == (int*) 0){
+    toThreadID = -1;
+  } else {
+    toThreadID = getThreadID(nextThread);
+  }
+
+  if (debug_scheduling){
+    print((int*) "next Thread: ");
+    printInteger(toThreadID);
+    println();
+  }
+
+  return toThreadID;
+}
+
+
 int scheduleRoundRobin(int fromID) {
   int *nextContext;
   int *currContext;
-  int *nextThread;
   //get current context
   currContext = findContext(fromID, usedContexts);
 
@@ -5847,18 +5994,10 @@ int scheduleRoundRobin(int fromID) {
   if (nextContext == (int *) 0) {
     nextContext = usedContexts;
   }
-  //schedule to the next thread
-  nextThread = getNextThread(getCurrentThread(nextContext));
-  if(nextThread == (int*) 0){
-      nextThread = getThreads(nextContext);
-  }
-  setCurrThread(nextContext, nextThread);
 
   if (debug_scheduling){
     print((int*) "next context ");
     printInteger(getID(nextContext));
-    print((int*) " and thread ");
-    printInteger(getThreadID(nextThread));
     println();
   }
 
@@ -6530,6 +6669,8 @@ void fct_syscall() {
       implementShmSize();
     else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD)
       implementThreadFork();
+    else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD_API)
+      implementThreadForkAPI();
     else {
       pc = pc - WORDSIZE;
 
@@ -7461,7 +7602,7 @@ int* allocateContext(int ID, int parentID) {
     freeContexts = getNextContext(freeContexts);
   }
 
-  mainThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
+  mainThread = malloc(4 * SIZEOFINTSTAR + 4 * SIZEOFINT);
 
   setNextContext(context, (int*) 0);
   setPrevContext(context, (int*) 0);
@@ -7490,6 +7631,7 @@ int* allocateContext(int ID, int parentID) {
   setThreadRegHi(mainThread, 0);
   setThreads(context, mainThread);
   setCurrThread(context, mainThread);
+  setConPrevThread(context, mainThread);
 
   return context;
 }
@@ -7541,17 +7683,42 @@ int* findThread(int* threads, int id) {
 void switchContext(int* from, int* to) {
   int* thread;
 
-  thread = getCurrentThread(from);
+  if (from != (int*) 0) {
+    // assert : every process has at least one thread
 
-  // save machine state
-  setThreadPC(thread, pc);
-  setThreadRegHi(thread, reg_hi);
-  setThreadRegLo(thread, reg_lo);
-  setBreak(from, brk);
+    thread = getConPrevThread(from);
+    if (debug_switch_SP) {
+      print((int*) "ID: ");
+      printInteger(getID(from));
+      print((int*) " threadId: ");
+      printInteger(getThreadID(thread));
+      print((int*) " old SP: ");
+      printInteger(*(getThreadRegs(thread) + REG_SP));
+      print((int*) " old PC: ");
+      printInteger(getThreadPC(thread));
+    }
+
+    // save machine state
+    setThreadPC(thread, pc);
+    setThreadRegHi(thread, reg_hi);
+    setThreadRegLo(thread, reg_lo);
+    setBreak(from, brk);
+  }
 
   thread = getCurrentThread(to);
+  if (debug_switch_SP) {
+    print((int*) ", ID: ");
+    printInteger(getID(to));
+    print((int*) " threadID: ");
+    printInteger(getThreadID(thread));
+    print((int *) " new SP: ");
+    printInteger(*(getThreadRegs(thread) + REG_SP));
+    print((int *) " new PC: ");
+    printInteger(getThreadPC(thread));
+    println();
+  }
 
-  // restore machine state
+    // restore machine state
   pc        = getThreadPC(thread);
   registers = getThreadRegs(thread);
   reg_hi    = getThreadRegHi(thread);
@@ -7771,8 +7938,10 @@ void mapUnmappedPages(int* table) {
 
 void down_mapPageTable(int* context) {
   int page;
+  int* thread;
 
   // assert: context page table is only mapped from beginning up and end down
+  // assert: also map all pages from the stacks of all threads
 
   page = 0;
 
@@ -7782,12 +7951,16 @@ void down_mapPageTable(int* context) {
     page = page + 1;
   }
 
-  page = (VIRTUALMEMORYSIZE - WORDSIZE) / PAGESIZE;
+  thread = getThreads(context);
+  while (thread != (int*) 0){
 
-  while (isPageMapped(getPT(context), page)) {
-    selfie_map(getID(context), page, getFrameForPage(getPT(context), page));
+    page = (VIRTUALMEMORYSIZE - WORDSIZE - STACKSIZEPERTHREAD * getThreadID(thread)) / PAGESIZE;
+    while (isPageMapped(getPT(context), page)) {
+      selfie_map(getID(context), page, getFrameForPage(getPT(context), page));
 
-    page = page - 1;
+      page = page - 1;
+    }
+    thread = getNextThread(thread);
   }
 }
 
@@ -7851,7 +8024,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
   int toThreadID = 0;
 
   while (1) {
-    toThreadID = getThreadID(getCurrentThread(usedContexts));
+    //toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
 
     if(debug_runOrHost) {
       printInteger(selfie_ID());
@@ -7907,9 +8080,17 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
-        toID = scheduleRoundRobin(fromID);
+        toThreadID = scheduleRoundRobinThread(fromID);
+        if(toThreadID < 0){
+          toID = scheduleRoundRobin(fromID);
+          toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
+        }
       } else if (exceptionNumber == EXCEPTION_TIMER) {
-        toID = scheduleRoundRobin(fromID);
+        toThreadID = scheduleRoundRobinThread(fromID);
+        if(toThreadID < 0){
+          toID = scheduleRoundRobin(fromID);
+          toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
+        }
       } else {
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
@@ -7987,6 +8168,7 @@ int boot(int argc, int* argv) {
   int exitCode;
   int counter;
   int currentID;
+  int* thread;
 
   print(selfieName);
   print((int*) ": this is selfie's ");
@@ -8014,18 +8196,21 @@ int boot(int argc, int* argv) {
 
   up_loadBinary(getPT(usedContexts));
   up_loadArguments(getPT(usedContexts), argc, argv);
-
   down_mapPageTable(usedContexts);
 
-  counter = 1;
-  while (counter < INSTANCE_COUNT) {
+  //counter = 1;
+  //while (counter < INSTANCE_COUNT) {
     //TODO RUPI: implement proper threadForking and kick context copying
-    //doThreadFork(usedContexts, getCurrentThread(usedContexts));
-    selfie_threadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
-    counter = counter + 1;
-  }
-
-
+    //doThreadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
+  //  selfie_threadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
+  //  if (selfie_ID() >= 0){
+  //    thread = createContextThread(usedContexts);
+      //setThreadID(thread, currentID);
+  //  }
+    //down_mapPageTable(usedContexts);
+  //  counter = counter + 1;
+  //}
+  //down_mapPageTable(usedContexts);
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
