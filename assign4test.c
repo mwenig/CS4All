@@ -20,10 +20,7 @@ void boxedThreadFork(){
 
   boxedThreadFork1();
 
-  write(1, "works2", 6);
-  newLine();
-
-  someTmp = 11111;
+  yield();
 }
 
 void boxedThreadFork1(){
@@ -31,15 +28,10 @@ void boxedThreadFork1(){
   int *moreTmp;
 
   moreTmp = malloc(10);
-  someTmp = 3333;
+  someTmp = 88;
 
   forkThread();
   yield();
-
-  write(1, "works1", 6);
-  //newLine();
-
-  //someTmp = 4444;
 }
 
 void dumbITOA(int number) {
@@ -57,10 +49,10 @@ void dumbITOA(int number) {
     *(buff + all) = (tmp / div) + 48;
     tmp = tmp % div;
     div = div / 10;
-    all = all + 4;
+    all = all + 1;
   }
   //*(buff + all) = ' ';
-  write(1, buff, 20);
+  write(1, buff, 10);
 }
 
 int main(int argc, int *argv) {
@@ -98,7 +90,7 @@ int main(int argc, int *argv) {
   dumbITOA(*all);
   newLine();
 
-  boxedThreadFork();
+  forkThread();
 
   local = local + 1;
   *all = *all + 1;
