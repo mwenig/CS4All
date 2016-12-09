@@ -37,7 +37,7 @@ void boxedThreadFork1(){
   yield();
 
   write(1, "works1", 6);
-  newLine();
+  //newLine();
 
   //someTmp = 4444;
 }
