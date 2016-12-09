@@ -5509,19 +5509,20 @@ void implementYield() {
     printInteger(getID(currentContext));
     print((int *) " thread ");
     printInteger(getThreadID(getCurrentThread(currentContext)));
-    print((int *) " yields");
+    print((int *) " yields at PC ");
+    printInteger(getThreadPC(getCurrentThread(currentContext)));
     println();
   }
   throwException(EXCEPTION_YIELD, 0);
 }
 
 void emitForkThread() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*)"forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
+  createSymbolTableEntry(LIBRARY_TABLE, (int *) "forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD_API);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_FORK_THREAD_API);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 
@@ -5656,10 +5657,11 @@ void implementThreadForkAPI() {
   int ret;
   print((int *) "threadFork_API");
   println();
+
+  //TODO RUPI: fork the thread
   setThreadPC(getCurrentThread(currentContext), pc);
   ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
   *(registers+REG_V1) = ret;
-  //TODO RUPI: fork the thread
 }
 
 
@@ -5698,7 +5700,7 @@ int doThreadFork(int contextID, int threadID) {
   }
 
   //set pc and stuff
-  setThreadPC(newThread, getThreadPC(fromThread) + 1 *  WORDSIZE);
+  setThreadPC(newThread, getThreadPC(fromThread) );
   setThreadRegLo(newThread, getThreadRegLo(fromThread));
   setThreadRegHi(newThread, getThreadRegHi(fromThread));
 
@@ -5725,7 +5727,6 @@ int doThreadFork(int contextID, int threadID) {
     println();
   }
   //copy top down
-  //TODO RUPI: get size of stack for current method
   while (vAddressFromThread >= SP_from - 15*WORDSIZE) { //max 15 arguments in the current method
 
     mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, *(tlb(getPT(toContext), vAddressFromThread)));
@@ -5743,9 +5744,6 @@ int doThreadFork(int contextID, int threadID) {
     vAddressFromThread = vAddressFromThread - WORDSIZE;
     vAddressNewThread = vAddressNewThread - WORDSIZE;
   }
-
-  //set new SP pointer
-  *(getThreadRegs(newThread) + REG_SP) = SP_from - threadsSP_diff;
 
   //fixupchain for stack - bottom to top (innermost method up to outermost method == main.. main is handled extra)
   vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
@@ -5796,6 +5794,15 @@ int doThreadFork(int contextID, int threadID) {
     printInteger(threadSP_fixupChain);
     print((int *) " calculated to ");
     printInteger(vAddressNewThread);
+    println();
+  }
+
+  //set new SP pointer
+  *(getThreadRegs(newThread) + REG_SP) = loadVirtualMemory(getPT(toContext), SP_from - threadsSP_diff) - 2 * WORDSIZE;
+
+  if (debug_threadFork) {
+    print((int *) "Loaded SP to: ");
+    printInteger(*(getThreadRegs(newThread) + REG_SP));
     println();
   }
 
