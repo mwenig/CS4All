@@ -909,14 +909,14 @@ void implementShmClose();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 1;
+int debug_create = 0;
 int debug_switch = 0;
 int debug_switch_Regs = 1;
-int debug_switch_memory = 0;
+int debug_switch_memory = 1;
 int debug_status = 0;
-int debug_delete = 0;
+int debug_delete = 1;
 int debug_map    = 0;
-int debug_threadFork = 1;
+int debug_threadFork = 0;
 int debug_scheduling = 1;
 int debug_yield = 1;
 int debug_runOrHost = 1;
@@ -5754,7 +5754,7 @@ int doThreadFork(int contextID, int threadID) {
   //fixupchain for stack - bottom to top (innermost method up to outermost method == main.. main is handled extra)
   vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
   //TODO RUPI  assumption of max 13 arguments in the main method - do pls something better here!!
-  while (SP_from - threadsSP_diff < vAddressFromThread - 13 * WORDSIZE) {
+  while (SP_from < vAddressFromThread - 13 * WORDSIZE) {
 
     mapAndStoreVirtualMemory(getPT(toContext), SP_from - threadsSP_diff, *(tlb(getPT(toContext), SP_from)) - threadsSP_diff );
 
@@ -5772,27 +5772,39 @@ int doThreadFork(int contextID, int threadID) {
 
     SP_from = *(tlb(getPT(toContext), SP_from));
   }
+  //happened the fork-call at top level == main?? --> correct the SP
+  if(SP_from < vAddressFromThread - 13 * WORDSIZE){
+    SP_from = SP_from + 2 * WORDSIZE;
+  }
 
+  SP_from = SP_from + 2 * WORDSIZE;
 
-  //SP fixupchain end for the main method
-  //threadSP_fixupChain = *(tlb(getPT(toContext), threadSP_fixupChain + 2* WORDSIZE));
-  //mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread + 2 * WORDSIZE, threadSP_fixupChain - threadsSP_diff);
-  //vAddressNewThread = threadSP_fixupChain - threadsSP_diff + 2 * WORDSIZE;
+  mapAndStoreVirtualMemory(getPT(toContext), SP_from - threadsSP_diff,
+                           *(tlb(getPT(toContext), SP_from)) - threadsSP_diff);
 
-  //if (debug_threadFork) {
-  //  print((int *) "MAIN fromThreadSP-Chain: ");
-  //  printInteger(threadSP_fixupChain);
-  //  print((int *) " calculated to ");
-  //  printInteger(vAddressNewThread);
-  //  println();
-  //}
+  //SP_from = *(tlb(getPT(toContext), SP_from)) - threadsSP_diff;
 
-  SP_from = *(getThreadRegs(fromThread) + REG_SP) + 2 * WORDSIZE;
+  //mapAndStoreVirtualMemory(getPT(toContext), SP_from - threadsSP_diff,
+  //                         *(tlb(getPT(toContext), SP_from)) - threadsSP_diff);
+
+  if (debug_threadFork) {
+    print((int *) "MAIN at: ");
+    printInteger(SP_from - threadsSP_diff);
+    print((int *) " written ");
+    printInteger(*(tlb(getPT(toContext), SP_from)) - threadsSP_diff);
+    println();
+  }
+
+  SP_from = *(getThreadRegs(fromThread) + REG_FP) - threadsSP_diff;
+
+  if (*(getThreadRegs(fromThread) + REG_FP) >= vAddressFromThread - 13 * WORDSIZE){
+    SP_from = SP_from + 2 * WORDSIZE;
+  }
 
   //set new SP pointer
   //*(getThreadRegs(newThread) + REG_SP) = *(tlb(getPT(toContext), SP_from)) - threadsSP_diff - 6 * WORDSIZE;
-  *(getThreadRegs(newThread) + REG_SP) = SP_from - threadsSP_diff - 2 * WORDSIZE;
-  *(getThreadRegs(newThread) + REG_FP) = *(getThreadRegs(fromThread) + REG_FP) - threadsSP_diff;
+  *(getThreadRegs(newThread) + REG_SP) = SP_from ;//- 2 * WORDSIZE;
+  *(getThreadRegs(newThread) + REG_FP) = SP_from;
 
   if (debug_threadFork) {
     print((int *) "Loaded SP to: ");
@@ -7693,33 +7705,35 @@ void switchContext(int* from, int* to) {
     // assert : every process has at least one thread
 
     thread = getConPrevThread(from);
-    if (debug_switch_Regs) {
-      print((int*) "ID: ");
-      printInteger(getID(from));
-      print((int*) " threadId: ");
-      printInteger(getThreadID(thread));
-      print((int*) " old SP: ");
-      printInteger(*(getThreadRegs(thread) + REG_SP));
-      print((int*) " old PC: ");
-      printInteger(getThreadPC(thread));
-      println();
-    }
-    if (debug_switch_memory) {
-      i = - 2 * WORDSIZE;
-      while ( i < 8 * WORDSIZE){
-        printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-        print((int*) " - ");
-        printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
-        println();
-        i = i + WORDSIZE;
+    if (thread != (int*) 0 ) {
+      if (debug_switch_Regs) {
+        print((int*) "ID: ");
+        printInteger(getID(from));
+        print((int*) " threadId: ");
+        printInteger(getThreadID(thread));
+        print((int*) " old SP: ");
+        printInteger(*(getThreadRegs(thread) + REG_SP));
+        print((int*) " old PC: ");
+        printInteger(getThreadPC(thread));
       }
-    }
+      if (debug_switch_memory) {
+        println();
+        i = -4 * WORDSIZE;
+        while ( i < 5 * WORDSIZE){
+          printInteger(*(getThreadRegs(thread) + REG_SP) + i);
+          print((int*) " - ");
+          printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
+          println();
+          i = i + WORDSIZE;
+        }
+      }
 
-    // save machine state
-    setThreadPC(thread, pc);
-    setThreadRegHi(thread, reg_hi);
-    setThreadRegLo(thread, reg_lo);
-    setBreak(from, brk);
+      // save machine state
+      setThreadPC(thread, pc);
+      setThreadRegHi(thread, reg_hi);
+      setThreadRegLo(thread, reg_lo);
+      setBreak(from, brk);
+    }
   }
 
   thread = getCurrentThread(to);
@@ -7735,8 +7749,8 @@ void switchContext(int* from, int* to) {
     println();
   }
   if (debug_switch_memory) {
-    i = - 2 * WORDSIZE;
-    while ( i < 8 * WORDSIZE){
+    i = - 4 * WORDSIZE;
+    while ( i < 5 * WORDSIZE){
       printInteger(*(getThreadRegs(thread) + REG_SP) + i);
       print((int*) " - ");
       printInteger(*(tlb(getPT(to), *(getThreadRegs(thread) + REG_SP) + i)));
@@ -7778,20 +7792,22 @@ int* deleteContext(int* context, int* from) {
   return from;
 }
 
-void deleteThread(int* fromContext, int* thread){
-  if (getNextThread(thread) != (int*) 0) {
+void deleteThread(int *fromContext, int *thread) {
+  if (getNextThread(thread) != (int *) 0) {
     setPrevThread(getNextThread(thread), getPrevThread(thread));
   }
-  if (getPrevThread(thread) != (int*) 0) {
+  if (getPrevThread(thread) != (int *) 0) {
     setNextThread(getPrevThread(thread), getNextThread(thread));
-    setPrevThread(thread, (int*) 0);
+    setPrevThread(thread, (int *) 0);
   } else {
     setThreads(fromContext, getNextThread(thread));
   }
-  if(getCurrentThread(fromContext) == thread){
-      setCurrThread(fromContext, getThreads(fromContext));
+  if (getCurrentThread(fromContext) == thread) {
+    setCurrThread(fromContext, getThreads(fromContext));
   }
-
+  if (getConPrevThread(fromContext) == thread) {
+    setConPrevThread(fromContext, getThreads(fromContext));
+  }
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -8089,7 +8105,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       } else if (exceptionNumber == EXCEPTION_EXIT) {
 
         //delete current context
-        toThreadID = getThreadID(getCurrentThread(fromContext));
+        //toThreadID = getThreadID(getCurrentThread(fromContext));
         selfie_delete(fromID, toThreadID);
 
         //if hypster is used, also delete context from its local contexts.
@@ -8103,6 +8119,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
           //otherwise: schedule other process. TODO: make this more fair
         else {
           toID = getID(usedContexts);
+          toThreadID = getThreadID(getThreads(usedContexts));
         }
       }
         //If there is a timer or yield interrupt, then re-schedule
