@@ -61,7 +61,7 @@ int main(int argc, int *argv) {
   int *all;
   int *sub;
 
-  newLineBuffer = malloc(5);
+  newLineBuffer = malloc(12);
   *newLineBuffer = 10; //==newline
   *(newLineBuffer + 1) = ' ';
 

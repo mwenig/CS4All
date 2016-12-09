@@ -916,7 +916,8 @@ int debug_switch_memory = 1;
 int debug_status = 0;
 int debug_delete = 1;
 int debug_map    = 0;
-int debug_threadFork = 0;
+int debug_threadFork = 1;
+int debug_threadFork_memory = 1;
 int debug_scheduling = 1;
 int debug_yield = 1;
 int debug_runOrHost = 1;
@@ -5715,7 +5716,7 @@ int doThreadFork(int contextID, int threadID) {
   //copy stack from "fromThread" to "newThread"
   vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
   vAddressNewThread  = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread ) * STACKSIZEPERTHREAD;
-  threadsSP_diff = (getThreadID(newThread) - getThreadID(fromThread ))* STACKSIZEPERTHREAD;
+  threadsSP_diff = (getThreadID(newThread) - getThreadID(fromThread)) * STACKSIZEPERTHREAD;
   //+ 2 WORDSIZE SINCE WE DID A SYSCALL WITH 2 ARGUMENTS!!!!!!!!!!!! don't copy that syscall stuff (== SHIT)!
   SP_from = *(getThreadRegs(fromThread) + REG_SP) + 2 * WORDSIZE;
 
@@ -5724,6 +5725,8 @@ int doThreadFork(int contextID, int threadID) {
     printInteger(SP_from);
     print((int*) " fromTopSP: ");
     printInteger(vAddressFromThread);
+    print((int*) " diff ");
+    printInteger(threadsSP_diff);
     println();
   }
   //copy top down
@@ -5754,11 +5757,11 @@ int doThreadFork(int contextID, int threadID) {
   //fixupchain for stack - bottom to top (innermost method up to outermost method == main.. main is handled extra)
   vAddressFromThread = VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(fromThread) * STACKSIZEPERTHREAD;
   //TODO RUPI  assumption of max 13 arguments in the main method - do pls something better here!!
-  while (SP_from < vAddressFromThread - 13 * WORDSIZE) {
+  while (SP_from <= vAddressFromThread - 13 * WORDSIZE) {
 
     mapAndStoreVirtualMemory(getPT(toContext), SP_from - threadsSP_diff, *(tlb(getPT(toContext), SP_from)) - threadsSP_diff );
 
-    if (debug_threadFork) {
+    if (debug_threadFork_memory) {
       print((int *) "data ");
       printInteger(*(tlb(getPT(toContext), SP_from)));
       print((int *) " from address: ");
@@ -5773,11 +5776,13 @@ int doThreadFork(int contextID, int threadID) {
     SP_from = *(tlb(getPT(toContext), SP_from));
   }
   //happened the fork-call at top level == main?? --> correct the SP
-  if(SP_from < vAddressFromThread - 13 * WORDSIZE){
+  if(*(getThreadRegs(fromThread) + REG_SP) + 2 * WORDSIZE > vAddressFromThread - 13 * WORDSIZE){
+    print((int*) "within main coppy asdfasdfasdf");
+    println();
     SP_from = SP_from + 2 * WORDSIZE;
   }
-
   SP_from = SP_from + 2 * WORDSIZE;
+
 
   mapAndStoreVirtualMemory(getPT(toContext), SP_from - threadsSP_diff,
                            *(tlb(getPT(toContext), SP_from)) - threadsSP_diff);
@@ -5815,19 +5820,6 @@ int doThreadFork(int contextID, int threadID) {
     printInteger(*(getThreadRegs(newThread) + REG_RA));
     println();
   }
-
-  //mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
-
-  //set SP appropriately
-  //mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, VIRTUALMEMORYSIZE - 2 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
-  //if (debug_threadFork) {
-  //  print((int *) "set StackPointer ");
-  //  printInteger(VIRTUALMEMORYSIZE - 1 * WORDSIZE - getThreadID(newThread) * STACKSIZEPERTHREAD);
-  //  print((int *) " to address: ");
-  //  printInteger(vAddressNewThread);
-  //  println();
-  //}
-
 
   down_mapPageTable(toContext);
 
