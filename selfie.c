@@ -910,13 +910,13 @@ void implementShmClose();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 0;
-int debug_switch_Regs = 0;
+int debug_switch = 1;
+int debug_switch_Regs = 1;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 0;
+int debug_threadFork = 1;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
@@ -5657,8 +5657,8 @@ void implementThreadFork() {
 
 void implementThreadForkAPI() {
   int ret;
-  print((int *) "threadFork_API");
-  println();
+  //print((int *) "threadFork_API");
+  //println();
 
   //TODO RUPI: fork the thread
   setThreadPC(getCurrentThread(currentContext), pc);
@@ -5932,6 +5932,7 @@ int mipster_threadFork(int contextID, int threadID) {
   int retID;
 
   print((int *) "mipster_threadFork");
+  println();
 
   // this procedure is only executed at boot level zero
   retID = doThreadFork(contextID, threadID);
