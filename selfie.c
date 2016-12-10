@@ -910,13 +910,13 @@ void implementShmClose();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 1;
-int debug_switch_Regs = 1;
+int debug_switch = 0;
+int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 1;
+int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
@@ -5837,9 +5837,9 @@ int doSwitch(int toID, int toThreadID) {
   int* toThread;
 
   fromID = getID(currentContext);
-  if (currentContext != (int*) 0){
-    setConPrevThread(currentContext, getCurrentThread(currentContext));
-  }
+  //if (currentContext != (int*) 0){
+  //  setConPrevThread(currentContext, getCurrentThread(currentContext));
+  //}
 
   toContext = findContext(toID, usedContexts);
   toThread = findThread(getThreads(toContext), toThreadID);
@@ -5847,6 +5847,10 @@ int doSwitch(int toID, int toThreadID) {
 
   if (toContext != (int*) 0) {
     switchContext(currentContext, toContext);
+
+    if (currentContext != (int*) 0){
+      setConPrevThread(currentContext, getCurrentThread(currentContext));
+    }
 
     currentContext = toContext;
 
@@ -5876,6 +5880,11 @@ int doSwitch(int toID, int toThreadID) {
 void implementSwitch() {
   int fromID;
 
+  if (debug_switch) {
+    print((int*) "hypster_switch");
+    println();
+  }
+
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
   // before evaluating the rvalue doSwitch()
@@ -5888,6 +5897,11 @@ void implementSwitch() {
 
 int mipster_switch(int toID, int threadID) {
   int fromID;
+
+  if (debug_switch) {
+    print((int*) "mipster_switch");
+    println();
+  }
 
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
@@ -7701,7 +7715,7 @@ void switchContext(int* from, int* to) {
     // assert : every process has at least one thread
 
     thread = getConPrevThread(from);
-    if (thread != getCurrentThread(to)) {
+    //if (from == to || thread != getCurrentThread(to)) {
       if (thread != (int*) 0 ) {
         if (debug_switch_Regs) {
           print((int*) "ID: ");
@@ -7731,7 +7745,7 @@ void switchContext(int* from, int* to) {
         setThreadRegLo(thread, reg_lo);
         setBreak(from, brk);
       }
-    }
+    //}
   }
 
   thread = getCurrentThread(to);
@@ -7803,9 +7817,9 @@ void deleteThread(int *fromContext, int *thread) {
   if (getCurrentThread(fromContext) == thread) {
     setCurrThread(fromContext, getThreads(fromContext));
   }
-  if (getConPrevThread(fromContext) == thread) {
-    setConPrevThread(fromContext, getThreads(fromContext));
-  }
+  //if (getConPrevThread(fromContext) == thread) {
+  //  setConPrevThread(fromContext, getThreads(fromContext));
+  //}
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -8239,20 +8253,6 @@ int boot(int argc, int* argv) {
   up_loadBinary(getPT(usedContexts));
   up_loadArguments(getPT(usedContexts), argc, argv);
   down_mapPageTable(usedContexts);
-
-  //counter = 1;
-  //while (counter < INSTANCE_COUNT) {
-    //TODO RUPI: implement proper threadForking and kick context copying
-    //doThreadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
-  //  selfie_threadFork(getID(usedContexts), getThreadID(getCurrentThread(usedContexts)));
-  //  if (selfie_ID() >= 0){
-  //    thread = createContextThread(usedContexts);
-      //setThreadID(thread, currentID);
-  //  }
-    //down_mapPageTable(usedContexts);
-  //  counter = counter + 1;
-  //}
-  //down_mapPageTable(usedContexts);
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
