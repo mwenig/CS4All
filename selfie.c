@@ -911,16 +911,16 @@ void implementShmClose();
 
 int debug_create = 0;
 int debug_switch = 0;
-int debug_switch_Regs = 1;
-int debug_switch_memory = 1;
+int debug_switch_Regs = 0;
+int debug_switch_memory = 0;
 int debug_status = 0;
-int debug_delete = 1;
+int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 1;
-int debug_threadFork_memory = 1;
-int debug_scheduling = 1;
-int debug_yield = 1;
-int debug_runOrHost = 1;
+int debug_threadFork = 0;
+int debug_threadFork_memory = 0;
+int debug_scheduling = 0;
+int debug_yield = 0;
+int debug_runOrHost = 0;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -5727,10 +5727,12 @@ int doThreadFork(int contextID, int threadID) {
     printInteger(vAddressFromThread);
     print((int*) " diff ");
     printInteger(threadsSP_diff);
+    print((int*) " FP ");
+    printInteger(*(getThreadRegs(fromThread) + REG_FP));
     println();
   }
   //copy top down
-  while (vAddressFromThread >= SP_from - 15*WORDSIZE) { //max 15 arguments in the current method
+  while (vAddressFromThread >= SP_from - 13*WORDSIZE) { //max 15 arguments in the current method
 
     mapAndStoreVirtualMemory(getPT(toContext), vAddressNewThread, *(tlb(getPT(toContext), vAddressFromThread)));
 
@@ -5776,9 +5778,7 @@ int doThreadFork(int contextID, int threadID) {
     SP_from = *(tlb(getPT(toContext), SP_from));
   }
   //happened the fork-call at top level == main?? --> correct the SP
-  if(*(getThreadRegs(fromThread) + REG_SP) + 2 * WORDSIZE > vAddressFromThread - 13 * WORDSIZE){
-    print((int*) "within main coppy asdfasdfasdf");
-    println();
+  if(*(getThreadRegs(fromThread) + REG_FP) + 2 * WORDSIZE > vAddressFromThread - 13 * WORDSIZE){
     SP_from = SP_from + 2 * WORDSIZE;
   }
   SP_from = SP_from + 2 * WORDSIZE;
@@ -5800,16 +5800,19 @@ int doThreadFork(int contextID, int threadID) {
     println();
   }
 
-  SP_from = *(getThreadRegs(fromThread) + REG_FP) - threadsSP_diff;
-
-  if (*(getThreadRegs(fromThread) + REG_FP) >= vAddressFromThread - 13 * WORDSIZE){
-    SP_from = SP_from + 2 * WORDSIZE;
-  }
+  SP_from = *(getThreadRegs(fromThread) + REG_SP) - threadsSP_diff;
 
   //set new SP pointer
   //*(getThreadRegs(newThread) + REG_SP) = *(tlb(getPT(toContext), SP_from)) - threadsSP_diff - 6 * WORDSIZE;
-  *(getThreadRegs(newThread) + REG_SP) = SP_from ;//- 2 * WORDSIZE;
-  *(getThreadRegs(newThread) + REG_FP) = SP_from;
+  *(getThreadRegs(newThread) + REG_SP) = SP_from;//- 2 * WORDSIZE;
+  if (*(getThreadRegs(fromThread) + REG_FP) >= vAddressFromThread - 13 * WORDSIZE){
+    *(getThreadRegs(newThread) + REG_SP) = *(getThreadRegs(fromThread) + REG_SP) - threadsSP_diff ;//+ 2 * WORDSIZE;
+    *(getThreadRegs(newThread) + REG_FP) = *(getThreadRegs(fromThread) + REG_FP) - threadsSP_diff;
+  } else {
+    *(getThreadRegs(newThread) + REG_SP) = SP_from;//- 2 * WORDSIZE;
+    *(getThreadRegs(newThread) + REG_FP) = *(getThreadRegs(fromThread) + REG_FP) - threadsSP_diff;
+  }
+
 
   if (debug_threadFork) {
     print((int *) "Loaded SP to: ");
@@ -5849,7 +5852,7 @@ int doSwitch(int toID, int toThreadID) {
 
     if (debug_switch) {
       print(binaryName);
-      print((int*) ": selfie_switch with ID: ");
+      print((int*) ": selfie_switch with ID ");
       printInteger(selfie_ID());
       print((int*) " from context ");
       printInteger(fromID);
@@ -7697,34 +7700,36 @@ void switchContext(int* from, int* to) {
     // assert : every process has at least one thread
 
     thread = getConPrevThread(from);
-    if (thread != (int*) 0 ) {
-      if (debug_switch_Regs) {
-        print((int*) "ID: ");
-        printInteger(getID(from));
-        print((int*) " threadId: ");
-        printInteger(getThreadID(thread));
-        print((int*) " old SP: ");
-        printInteger(*(getThreadRegs(thread) + REG_SP));
-        print((int*) " old PC: ");
-        printInteger(getThreadPC(thread));
-      }
-      if (debug_switch_memory) {
-        println();
-        i = -4 * WORDSIZE;
-        while ( i < 5 * WORDSIZE){
-          printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-          print((int*) " - ");
-          printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
-          println();
-          i = i + WORDSIZE;
+    if (thread != getCurrentThread(to)) {
+      if (thread != (int*) 0 ) {
+        if (debug_switch_Regs) {
+          print((int*) "ID: ");
+          printInteger(getID(from));
+          print((int*) " threadId: ");
+          printInteger(getThreadID(thread));
+          print((int*) " old SP: ");
+          printInteger(*(getThreadRegs(thread) + REG_SP));
+          print((int*) " old PC: ");
+          printInteger(getThreadPC(thread));
         }
-      }
+        if (debug_switch_memory) {
+          println();
+          i = -4 * WORDSIZE;
+          while ( i < 5 * WORDSIZE){
+            printInteger(*(getThreadRegs(thread) + REG_SP) + i);
+            print((int*) " - ");
+            printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
+            println();
+            i = i + WORDSIZE;
+          }
+        }
 
-      // save machine state
-      setThreadPC(thread, pc);
-      setThreadRegHi(thread, reg_hi);
-      setThreadRegLo(thread, reg_lo);
-      setBreak(from, brk);
+        // save machine state
+        setThreadPC(thread, pc);
+        setThreadRegHi(thread, reg_hi);
+        setThreadRegLo(thread, reg_lo);
+        setBreak(from, brk);
+      }
     }
   }
 

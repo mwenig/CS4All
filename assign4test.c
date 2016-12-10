@@ -89,8 +89,9 @@ int main(int argc, int *argv) {
   dumbITOA(*all);
   newLine();
 
-  forkThread();
   yield();
+
+  forkThread();
 
   local = local + 1;
   *all = *all + 1;
@@ -103,5 +104,4 @@ int main(int argc, int *argv) {
   write(1, "all ", 4);
   dumbITOA(*all);
   newLine();
-
 }
