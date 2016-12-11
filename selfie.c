@@ -907,6 +907,12 @@ void implementShmMap();
 void emitShmClose();
 void implementShmClose();
 
+void emitLock();
+void implementLock();
+
+void emitUnlock();
+void implementUnlock();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
@@ -936,6 +942,8 @@ int SYSCALL_SHMM   = 4910;
 int SYSCALL_SHMC   = 4911;
 int SYSCALL_FORK_THREAD = 4912;
 int SYSCALL_FORK_THREAD_API = 4913;
+int SYSCALL_LOCK = 4914;
+int SYSCALL_UNLOCK = 4915;
 
 
 
@@ -1292,6 +1300,7 @@ void switchContext(int* from, int* to);
 void freeContext(int* context);
 int* deleteContext(int* context, int* from);
 void deleteThread(int* fromContext, int* thread);
+void insertThread(int *context, int *newThread);
 
 void mapPage(int* table, int page, int frame);
 
@@ -1300,15 +1309,12 @@ void mapPage(int* table, int page, int frame);
 // | 0 | next   | pointer to next context
 // | 1 | prev   | pointer to previous context
 // | 2 | id     | unique identifier
-// | 3 | pc     | program counter
-// | 4 | regs   | pointer to general purpose registers
-// | 5 | reg_hi | hi register
-// | 6 | reg_lo | lo register
-// | 7 | pt     | pointer to page table
-// | 8 | brk    | break between code, data, and heap
-// | 9 | parent | ID of context that created this context
-// | 10| threads| list of all threads of this context
-// | 11| curThre| current thread, points to an element in "threads"
+// | 3 | pt     | pointer to page table
+// | 4 | brk    | break between code, data, and heap
+// | 5 | parent | ID of context that created this context
+// | 6 | threads| list of all threads of this context
+// | 7 | curThre| current thread, points to an element in "threads"
+// | 8 | preThre|
 // +---+--------+
 
 int* getNextContext(int* context)  { return (int*) *context; }
@@ -1333,13 +1339,14 @@ void setConPrevThread(int* context, int* prevThread){ *(context + 8) = (int) pre
 
 // thread struct:
 // +---+--------+
-// | 0 | next   | pointer to next context
-// | 1 | prev   | pointer to previous context
+// | 0 | next   | pointer to next thread
+// | 1 | prev   | pointer to previous thread
 // | 2 | tid    | unique identifier
 // | 3 | pc     | program counter
 // | 4 | regs   | pointer to general purpose registers
 // | 5 | reg_hi | hi register
 // | 6 | reg_lo | lo register
+// | 7 | pid    | id of process this thread belongs to
 // +---+--------+
 
 int* getNextThread(int* thread)    { return (int*) *thread; }
@@ -1349,6 +1356,7 @@ int  getThreadPC(int* thread)      { return        *(thread + 3); }
 int* getThreadRegs(int* thread)    { return (int*) *(thread + 4); }
 int  getThreadRegHi(int* thread)   { return        *(thread + 5); }
 int  getThreadRegLo(int* thread)   { return        *(thread + 6); }
+int  getThreadPID(int *thread)     { return        *(thread + 7); }
 
 void setNextThread(int* thread, int* next)       { *thread       = (int) next; }
 void setPrevThread(int* thread, int* prev)       { *(thread + 1) = (int) prev; }
@@ -1357,6 +1365,153 @@ void setThreadPC(int* thread, int pc)            { *(thread + 3) = pc; }
 void setThreadRegs(int* thread, int* regs)       { *(thread + 4) = (int) regs; }
 void setThreadRegHi(int* thread, int regHi)      { *(thread + 5) = regHi; }
 void setThreadRegLo(int* thread, int regLo)      { *(thread + 6) = regLo; }
+void setThreadPID(int *thread, int pid)          { *(thread + 7) = pid; }
+
+
+// -------------------------------------------------------------------------------------------
+// -------------------------------------- WAIT QUEUE -----------------------------------------
+// -------------------------------------------------------------------------------------------
+
+
+// wait queue struct
+// +-----------+
+// | 0 | head  |
+// | 1 | tail  |
+// +-----------+
+
+int *getHead(int *queue);
+int *getTail(int *queue);
+void setHead(int *queue, int *context);
+void setTail(int *queue, int *context);
+
+int  isEmptyQueue(int *queue);
+int* createQueue();
+
+void  enqueue(int *queue, int *queueEntry);
+int*  dequeue(int *queue);
+
+void printQueue(int *queue);
+
+// -------------------------------------------------------------------------------------------
+// -------------------------------- WAIT QUEUE IMPLEMENTATION --------------------------------
+// -------------------------------------------------------------------------------------------
+
+int *getHead(int *queue)                    { return (int*) *queue; }
+int *getTail(int *queue)                    { return (int*) *(queue + 1); }
+void setHead(int *queue, int *context)      { *queue = (int) context; }
+void setTail(int *queue, int *context)      { *(queue + 1) = (int) context; }
+
+
+int *createQueue() {
+  int *queue;
+
+  queue = malloc(2 + SIZEOFINTSTAR);
+  setHead(queue, (int *) 0);
+  setTail(queue, (int *) 0);
+
+  return queue;
+}
+
+
+int isEmptyQueue(int *queue) {
+  return (getHead(queue) == (int*) 0);
+}
+
+
+void enqueue(int *queue, int *context) {
+
+  setNextContext(context, getHead(queue));
+
+  if (isEmptyQueue(queue))
+    setTail(queue, context);
+  else
+    setPrevContext(getHead(queue), context);
+
+  setHead(queue, context);
+
+}
+
+
+int *dequeue(int *queue) {
+  int *oldTail;
+
+  oldTail = getTail(queue);
+
+  if (oldTail != (int*) 0) {
+    setTail(queue, getPrevContext(oldTail));
+
+    if (getTail(queue) != (int*) 0) {
+      setNextContext(getTail(queue), (int *) 0);
+    }
+    else {
+      setHead(queue, (int *) 0);
+    }
+
+    setNextContext(oldTail, (int*) 0);
+    setPrevContext(oldTail, (int*) 0);
+  }
+
+  return oldTail;
+}
+
+void printQueue(int *queue) {
+  int *context;
+
+  context = getHead(queue);
+
+  while (context != (int*) 0) {
+    printInteger(getID(context));
+    print((int*)" ");
+    context = getNextContext(context);
+  }
+}
+
+
+// -------------------------------------------------------------------------------------------
+// -------------------------------------- LOCKS ----------------------------------------------
+// -------------------------------------------------------------------------------------------
+
+// lockstruct
+// +--------------+
+// | 0 | counter  |
+// | 1 | queue    |
+// +--------------+
+
+int  getLockCounter(int *lock);
+int  *getLockQueue(int *lock);
+void setLockCounter(int *lock, int counter);
+void setLockQueue(int *lock, int *queue);
+void incrementLockCounter(int *lock);
+void decrementLockCounter(int *lock);
+
+int *createLock();
+
+// -------------------------------------------------------------------------------------------
+// ---------------------------------- LOCKS IMPLEMENTATION ------------------------------------
+// -------------------------------------------------------------------------------------------
+
+int getLockCounter(int *lock)               { return *lock; }
+int *getLockQueue(int *lock)                { return (int*) *(lock + 1); }
+void setLockCounter(int *lock, int counter) { *lock = counter; }
+void setLockQueue(int *lock, int *queue)    { *(lock + 1) = (int) queue; }
+
+void incrementLockCounter(int *lock) {
+  setLockCounter(lock, getLockCounter(lock) + 1);
+}
+
+void decrementLockCounter(int *lock) {
+  setLockCounter(lock, getLockCounter(lock) - 1);
+}
+
+int *createLock() {
+  int *lock;
+
+  lock = malloc(SIZEOFINT + SIZEOFINTSTAR);
+  setLockCounter(lock, 1);
+  setLockQueue(lock, createQueue());
+
+  return lock;
+}
 
 // -----------------------------------------------------------------
 // -------------------------- MICROKERNEL --------------------------
@@ -1373,6 +1528,9 @@ int MIPSTER_ID = -1;
 int bumpID; // counter for generating unique context IDs
 
 int* currentContext = (int*) 0; // context currently running
+
+int* global_lock = (int*) 0;
+
 
 int* usedContexts = (int*) 0; // doubly-linked list of used contexts
 int* freeContexts = (int*) 0; // singly-linked list of free contexts
@@ -4225,6 +4383,9 @@ void selfie_compile() {
   emitShmMap();
   emitShmOpen();
   emitShmSize();
+  emitLock();
+  emitUnlock();
+
 
   while (link) {
     if (numberOfRemainingArguments() == 0)
@@ -4828,6 +4989,7 @@ void emitShmMap() {
   emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
+
 void implementShmMap() {
     int *shmo;
     int id;
@@ -5068,6 +5230,83 @@ void implementShmOpen() {
   *(registers+REG_V0) = get_shmo_id(shmo);
 }
 
+void emitLock() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "lock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+
+}
+
+void implementLock() {
+  int *thread;
+
+  // check if counter > 0. In this case, the lock is currently free
+  if (getLockCounter(global_lock) > 0) {
+
+    // decrement the lock counter
+    decrementLockCounter(global_lock);
+
+    print((int*)"Lock: 'You shall pass'");
+    println();
+
+    // the calling thread may continue its execution
+  }
+  else {
+    // if counter <= 0, then the lock is currently held by another thread
+    // that is, we have to put the calling thread to sleep and place its context into the wait queue of the lock
+
+    // delete thread from the thread list of the process
+    thread = getCurrentThread(currentContext);
+    deleteThread(currentContext, thread);
+
+    // set next/prev pointers to null just to make sure
+    setNextThread(thread, (int*) 0);
+    setPrevThread(thread, (int*) 0);
+
+    // enqueue the thread context into the wait queue for the global lock
+    enqueue(getLockQueue(global_lock), thread);
+
+    print((int*)"WEEEEE");
+    println();
+    implementUnlock();
+  }
+}
+
+void emitUnlock() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "unlock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementUnlock() {
+  int *waitQueue;
+  int *thread;
+
+  waitQueue = getLockQueue(global_lock);
+
+  // check if wait queue is empty
+  if (isEmptyQueue(waitQueue)) {
+    // in this case, no other thread will be woken up
+    // just increment the counter again
+    incrementLockCounter(global_lock);
+  }
+  else {
+    // if the queue is not empty, do not increment the counter, but wake up the first
+    // thread in the wait queue
+    thread = dequeue(waitQueue);
+
+    setNextThread(thread, (int*) 0);
+    setPrevThread(thread, (int*) 0);
+
+    insertThread(currentContext, thread);
+  }
+}
 
 
 void emitExit() {
@@ -5854,18 +6093,24 @@ int doSwitch(int toID, int toThreadID) {
     println();
   }
 
+  // find the context we want to switch to
   toContext = findContext(toID, usedContexts);
+  // find the thread in that context we want to switch to
   toThread = findThread(getThreads(toContext), toThreadID);
 
+  // set the currently running thread to conPrevThread of the current Context
   if (currentContext != (int*) 0){
     setConPrevThread(currentContext, getCurrentThread(currentContext));
   }
 
+  // set the new current thread of the context we are switching to
   setCurrThread(toContext, toThread);
 
   if (toContext != (int*) 0) {
+    // finally switch to new context
     switchContext(currentContext, toContext);
 
+    // update pointer to current context
     currentContext = toContext;
 
     if (debug_switch) {
@@ -6036,17 +6281,25 @@ int selfie_threadFork(int contextID, int threadID){
 int* createContextThread(int* context) {
   int* newThread;
 
-  newThread = malloc(3 * SIZEOFINTSTAR + 4 * SIZEOFINT);
+  newThread = malloc(3 * SIZEOFINTSTAR + 5 * SIZEOFINT);
 
   // append list accordingly
   setPrevThread(newThread, (int *) 0);
   setNextThread(newThread, getThreads(context));
-  setPrevThread(getThreads(context), newThread);
-  if(getThreads(context) != (int*) 0) {
+  //setPrevThread(getThreads(context), newThread); // getThreads(context) may be null
+
+  if (getThreads(context) != (int*) 0) {
+    setPrevThread(getThreads(context), newThread); // it is non-null here for sure
     setThreadID(newThread, getThreadID(getThreads(context)) + 1);
-  } else {
+  }
+  else {
     setThreadID(newThread, 0);
   }
+
+  // set the ID of the process to which newThread belongs
+  setThreadPID(newThread, getID(context));
+
+  // update pointer to thread list
   setThreads(context, newThread);
 
   return newThread;
@@ -6158,11 +6411,13 @@ void emitDelete() {
 void doDelete(int ID, int threadID) {
   int* context;
   int* thread;
+  int* waitQueue;
 
   context = findContext(ID, usedContexts);
 
   if (context != (int*) 0) {
-    thread = findThread(getThreads(context),threadID);
+    thread = findThread(getThreads(context), threadID);
+
     if (thread != (int*) 0){
       //delete the currentThread
       if (debug_delete){
@@ -6172,16 +6427,24 @@ void doDelete(int ID, int threadID) {
         printInteger(getID(context));
         println();
       }
+
       deleteThread(context, thread);
-      thread = getThreads(context);
-      if (thread == (int*) 0){
-        if (debug_delete){
-          print((int*) "no threads left, delete context ");
-          printInteger(getID(context));
-          println();
+
+      if (getThreads(context) == (int*) 0) {
+        waitQueue = getLockQueue(global_lock);
+        // check if a thread of the process is still waiting in the wait queue of the lock.
+        // if this is the case, the process itself must not be deleted yet.
+        // TODO: this may cause a process to have no active threads, but only waiting ones
+        // TODO: what to do when scheduling that process? 
+        if (findThread(getHead(waitQueue), getThreadID(thread)) == (int *) 0) {
+          if (debug_delete) {
+            print((int *) "no threads left, delete context ");
+            printInteger(getID(context));
+            println();
+          }
+          //no other threads?? delete context too
+          usedContexts = deleteContext(context, usedContexts);
         }
-        //no other threads?? delete context too
-        usedContexts = deleteContext(context, usedContexts);
       }
     }
     //no threads here?? delete context -- this should actually never happen
@@ -6767,6 +7030,11 @@ void fct_syscall() {
       implementThreadFork();
     else if (*(registers+REG_V0) == SYSCALL_FORK_THREAD_API)
       implementThreadForkAPI();
+    else if (*(registers+REG_V0) == SYSCALL_LOCK)
+      implementLock();
+    else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
+      implementUnlock();
+    }
     else {
       pc = pc - WORDSIZE;
 
@@ -7781,87 +8049,14 @@ void switchContext(int *from, int *to) {
   int i;
   // assert : every process has at least one thread
 
-  if (from != (int *) 0) {
-    thread = getConPrevThread(from);
-    if (thread != (int *) 0) {
-      if (debug_switch_Regs) {
-        print((int *) "from ID: ");
-        printInteger(getID(from));
-        print((int *) " fromThreadID: ");
-        printInteger(getThreadID(thread));
-        if (registers != (int *) 0) {
-          print((int *) " old SP: ");
-          printInteger(*(registers + REG_SP));
-        }
-        print((int *) " old PC: ");
-        printInteger(pc);
-      }
-      if (debug_switch_memory) {
-        println();
-        i = -4 * WORDSIZE;
-        while (i < 5 * WORDSIZE) {
-          printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-          print((int *) " - ");
-          printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
-          println();
-          i = i + WORDSIZE;
-        }
-      }
-
-      // save machine state
-      //setThreadPC(thread, pc);
-      //setThreadRegHi(thread, reg_hi);
-      //setThreadRegLo(thread, reg_lo);
-      //setBreak(from, brk);
-
-    }
-  }
-
+  // load context of new thread and process
   thread = getCurrentThread(to);
-
-  if (thread != (int*) 0) {
-    if (debug_switch_Regs) {
-      print((int *) ", ID: ");
-      printInteger(getID(to));
-      print((int *) " threadID: ");
-      printInteger(getThreadID(thread));
-      if (getThreadRegs(thread) != (int*) 0) {
-        print((int *) " new SP: ");
-        printInteger(*(getThreadRegs(thread) + REG_SP));
-      }
-      print((int *) " new PC: ");
-      printInteger(getThreadPC(thread));
-      println();
-    }
-    if (debug_switch_memory) {
-      i = -4 * WORDSIZE;
-      while (i < 5 * WORDSIZE) {
-        printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-        print((int *) " - ");
-        printInteger(*(tlb(getPT(to), *(getThreadRegs(thread) + REG_SP) + i)));
-        println();
-        i = i + WORDSIZE;
-      }
-    }
-  }
-  //if(from != (int*) 0){
-    //if (thread != getPrevThread(from)){
-    //  pc = getThreadPC(thread);
-    //  registers = getThreadRegs(thread);
-    //  reg_hi = getThreadRegHi(thread);
-    //  reg_lo = getThreadRegLo(thread);
-    //  pt = getPT(to);
-   //   brk = getBreak(to);
-   // }
-  //} else {
-    // restore machine state
     pc = getThreadPC(thread);
     registers = getThreadRegs(thread);
     reg_hi = getThreadRegHi(thread);
     reg_lo = getThreadRegLo(thread);
     pt = getPT(to);
     brk = getBreak(to);
-  //}
 
 
 }
@@ -7900,12 +8095,31 @@ void deleteThread(int *fromContext, int *thread) {
   } else {
     setThreads(fromContext, getNextThread(thread));
   }
-  setNextThread(thread, (int*) 0);
+  setNextThread(thread, (int *) 0);
   if (getCurrentThread(fromContext) == thread) {
-    setCurrThread(fromContext, (int*) 0);
+    setCurrThread(fromContext, (int *) 0);
   }
   if (getConPrevThread(fromContext) == thread) {
-    setConPrevThread(fromContext,(int*)  0);
+    setConPrevThread(fromContext, (int *) 0);
+  }
+}
+
+void insertThread(int *context, int *newThread) {
+  int *threads;
+
+  threads = getThreads(context);
+
+  // make newThread the head of the thread list
+  setNextThread(newThread, threads);
+
+
+  // if the thread list is not empty, update previous pointer of old head
+  if (threads != (int*) 0) {
+    setPrevThread(threads, newThread);
+  }
+  // if the thread list is empty, then make newThread the current thread of the context
+  else {
+    setCurrThread(context, newThread);
   }
 }
 
@@ -8233,7 +8447,8 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
           toID = scheduleRoundRobin(fromID);
           toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
         }
-      } else if (exceptionNumber == EXCEPTION_TIMER) {
+      }
+      else if (exceptionNumber == EXCEPTION_TIMER) {
         toThreadID = scheduleRoundRobinThread(fromID);
         if(toThreadID < 0){
           toID = scheduleRoundRobin(fromID);
@@ -8441,6 +8656,9 @@ int selfie_run(int engine, int machine, int debugger) {
   }
 
   initMemory(atoi(peekArgument()));
+
+  // initialize the global lock
+  global_lock = createLock();
 
   // pass binary name as first argument by replacing memory size
   setArgument(binaryName);
