@@ -6404,6 +6404,10 @@ void doDelete(int ID, int threadID) {
 
       if (getThreads(context) == (int*) 0) {
         waitQueue = getLockQueue(global_lock);
+        // check if a thread of the process is still waiting in the wait queue of the lock.
+        // if this is the case, the process itself must not be deleted yet.
+        // TODO: this may cause a process to have no active threads, but only waiting ones
+        // TODO: what to do when scheduling that process? 
         if (findThread(getHead(waitQueue), getThreadID(thread)) == (int *) 0) {
           if (debug_delete) {
             print((int *) "no threads left, delete context ");
