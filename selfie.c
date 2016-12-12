@@ -6549,7 +6549,7 @@ void doDelete(int ID, int threadID) {
         println();
       }
       usedContexts = deleteContext(context, usedContexts);
-    };
+    }
 
     if (debug_delete) {
       print(binaryName);
@@ -8541,7 +8541,9 @@ int runUntilExitWithoutExceptionHandling(int toID) {
   int *fromContext;
   int savedStatus;
   int exceptionNumber;
-  int toThreadID  = 0;
+  int toThreadID;
+
+  toThreadID = 0;
 
   while (1) {
     fromID = mipster_switch(toID, toThreadID);
@@ -8592,8 +8594,10 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
   int exceptionNumber;
   int exceptionParameter;
   int frame;
-  int toTID = 0;
+  int toTID;
   int *thread;
+
+  toTID = 0;
 
   while (1) {
     //toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
