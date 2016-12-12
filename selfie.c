@@ -6314,8 +6314,13 @@ void implementSwitch() {
   id = *(registers + REG_A0);
   threadID = *(registers + REG_A1);
 
-  fromID = doSwitch(id, threadID);
+  thread = getCurrentThread(currentContext);
+  setThreadPC(thread, pc);
+  setThreadRegHi(thread, reg_hi);
+  setThreadRegLo(thread, reg_lo);
+  setBreak(currentContext, brk);
 
+  fromID = doSwitch(id, threadID);
 
   // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
   *(registers+REG_V1) = fromID;
@@ -6454,7 +6459,6 @@ int selfie_threadFork(int contextID, int threadID){
   if(mipster){
     return mipster_threadFork(contextID, threadID);
   } else {
-
     newThreadID = hypster_threadFork(contextID, threadID);
     newThread = createContextThread(findContext(contextID, usedContexts));
     setThreadID(newThread, newThreadID);
@@ -8704,6 +8708,8 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         //  createContextThread(fromContext);
         //}
         selfie_threadFork(toID, toTID);
+
+        down_mapPageTable(findContext(toID, usedContexts), findThread(getThreads(findContext(toID, usedContexts)), toTID));
 
         if (debug_threadFork) {
           print((int*) "comming from the threadFork - toID ");
