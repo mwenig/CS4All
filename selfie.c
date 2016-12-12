@@ -920,14 +920,14 @@ void implementUnlock();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 1;
+int debug_switch = 0;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_boot = 0;
-int debug_delete = 1;
+int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 1;
+int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
@@ -1308,6 +1308,8 @@ int* findThread(int* threads, int id);
 
 void switchContext(int* from, int* to);
 
+void saveThreadState();
+
 void freeContext(int* context);
 int* deleteContext(int* context, int* from);
 void deleteThread(int* fromContext, int* thread);
@@ -1343,7 +1345,6 @@ int  getBreak(int* context)        { return        *(context + 4); }
 int  getParent(int* context)       { return        *(context + 5); }
 int* getThreads(int* context)      { return (int*) *(context + 6); }
 int* getCurrentThread(int* context){ return (int*) *(context + 7); }
-int* getConPrevThread(int* context){ return (int*) *(context + 8); }
 
 void setNextContext(int* context, int* next)        { *context       = (int) next; }
 void setPrevContext(int* context, int* prev)        { *(context + 1) = (int) prev; }
@@ -1353,7 +1354,6 @@ void setBreak(int* context, int brk)                { *(context + 4) = brk; }
 void setParent(int* context, int id)                { *(context + 5) = id; }
 void setThreads(int* context, int* threads)         { *(context + 6) = (int) threads; }
 void setCurrThread(int* context, int* currThread)   { *(context + 7) = (int) currThread; }
-void setConPrevThread(int* context, int* prevThread){ *(context + 8) = (int) prevThread; }
 
 // thread struct:
 // +---+--------+
@@ -6022,23 +6022,7 @@ void implementThreadFork() {
 }
 
 void implementThreadForkAPI() {
-  int ret;
-  //print((int *) "threadFork_API");
-  //println();
 
-  //TODO RUPI: fork the thread
-  printInteger(selfie_ID());
-  print((int*) " saving pc to C ");
-  printInteger(getID(currentContext));
-  print((int*) " T ");
-  printInteger(getThreadID(getCurrentThread(currentContext)));
-  print((int*) " - PC ");
-  printInteger(pc);
-  println();
-    setThreadPC(getCurrentThread(currentContext), pc);
-  //pc = pc + WORDSIZE;
-  //ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
-  //*(registers+REG_V1) = ret;
   throwException(EXCEPTION_FORK, 0);
 }
 
@@ -6213,9 +6197,6 @@ int doSwitch(int toID, int toThreadID) {
   int* toThread;
 
   fromID = getID(currentContext);
-  //if (currentContext != (int*) 0){
-  //  setConPrevThread(currentContext, getCurrentThread(currentContext));
-  //}
 
   if (debug_switch) {
     printInteger(selfie_ID());
@@ -6233,10 +6214,6 @@ int doSwitch(int toID, int toThreadID) {
   // find the thread in that context we want to switch to
   toThread = findThread(getThreads(toContext), toThreadID);
 
-  // set the currently running thread to conPrevThread of the current Context
-  if (currentContext != (int*) 0){
-    setConPrevThread(currentContext, getCurrentThread(currentContext));
-  }
 
   // set the new current thread of the context we are switching to
   setCurrThread(toContext, toThread);
@@ -6314,11 +6291,7 @@ void implementSwitch() {
   id = *(registers + REG_A0);
   threadID = *(registers + REG_A1);
 
-  thread = getCurrentThread(currentContext);
-  setThreadPC(thread, pc);
-  setThreadRegHi(thread, reg_hi);
-  setThreadRegLo(thread, reg_lo);
-  setBreak(currentContext, brk);
+  saveThreadState();
 
   fromID = doSwitch(id, threadID);
 
@@ -6386,36 +6359,7 @@ int mipster_switch(int toID, int threadID) {
 
   runUntilException();
 
-  if(debug_switch){
-    printInteger(selfie_ID());
-    print((int*) " endingSwitch! old PC ");
-    printInteger(pc);
-    if (registers != (int*) 0) {
-      print((int*) " old SP ");
-      printInteger(*(registers + REG_SP));
-    }
-  }
-
-  //thread = findThread(getThreads(findContext(toID, usedContexts)), threadID);
-  thread = getCurrentThread(currentContext);
-  setThreadPC(thread, pc);
-  setThreadRegHi(thread, reg_hi);
-  setThreadRegLo(thread, reg_lo);
-  setBreak(currentContext, brk);
-
-  if(debug_switch){
-    print((int*) " to ID ");
-    printInteger(getID(currentContext));
-    print((int*) " to T-ID ");
-    printInteger(getThreadID(thread));
-    print((int*) " PC ");
-    printInteger(pc);
-    if (registers != (int*) 0) {
-      print((int*) " SP ");
-      printInteger(*(registers + REG_SP));
-    }
-    println();
-  }
+  saveThreadState();
 
   return getID(currentContext);
 }
@@ -6474,7 +6418,7 @@ int selfie_threadFork(int contextID, int threadID){
 int* createContextThread(int* context) {
   int* newThread;
 
-  newThread = malloc(3 * SIZEOFINTSTAR + 5 * SIZEOFINT);
+  newThread = malloc(5 * SIZEOFINTSTAR + 3 * SIZEOFINT);
 
   // append list accordingly
   setPrevThread(newThread, (int *) 0);
@@ -8112,7 +8056,7 @@ int* allocateContext(int ID, int parentID) {
     freeContexts = getNextContext(freeContexts);
   }
 
-  mainThread = malloc(4 * SIZEOFINTSTAR + 4 * SIZEOFINT);
+  mainThread = malloc(5 * SIZEOFINTSTAR + 3 * SIZEOFINT);
 
   setNextContext(context, (int*) 0);
   setPrevContext(context, (int*) 0);
@@ -8142,7 +8086,6 @@ int* allocateContext(int ID, int parentID) {
   setThreads(context, mainThread);
   setThreadPID(mainThread, getID(context));
   setCurrThread(context, mainThread);
-  setConPrevThread(context, (int*) 0);
 
   return context;
 }
@@ -8227,8 +8170,15 @@ void switchContext(int *from, int *to) {
     }
     println();
   }
+}
 
-
+void saveThreadState(){
+  int* thread;
+  thread = getCurrentThread(currentContext);
+  setThreadPC(thread, pc);
+  setThreadRegHi(thread, reg_hi);
+  setThreadRegLo(thread, reg_lo);
+  setBreak(currentContext, brk);
 }
 
 void freeContext(int* context) {
@@ -8268,9 +8218,6 @@ void deleteThread(int *fromContext, int *thread) {
   setNextThread(thread, (int *) 0);
   if (getCurrentThread(fromContext) == thread) {
     setCurrThread(fromContext, (int *) 0);
-  }
-  if (getConPrevThread(fromContext) == thread) {
-    setConPrevThread(fromContext, (int *) 0);
   }
 }
 
