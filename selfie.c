@@ -838,6 +838,9 @@ void emitForkThread();
 void implementThreadFork();
 void implementThreadForkAPI();
 
+void emitOutput();
+void implementOutput();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_read   = 0;
@@ -859,12 +862,12 @@ int SYSCALL_MALLOC = 4045;
 
 void emitID();
 void implementID();
-int selfie_ID();
+int  selfie_ID();
 
 void emitCreate();
 int  doCreateContext(int parentID);
 void implementCreate();
-int selfie_create();
+int  selfie_create();
 
 void emitSwitch();
 int  doSwitch(int toID, int toThreadID);
@@ -875,15 +878,12 @@ int  selfie_switch(int toID, int threadID);
 void emitThreadFork();
 int  mipster_threadFork(int contextID, int threadID);
 int  selfie_threadFork(int contextID, int threadID);
-int* createContextThread(int* context);
+int  *createContextThread(int* context);
 int  doThreadFork(int context, int thread);
-
-int scheduleRoundRobin(int fromID);
-int scheduleRoundRobinThread(int fromID);
 
 void emitStatus();
 void implementStatus();
-int selfie_status();
+int  selfie_status();
 
 void emitDelete();
 void doDelete(int ID, int threadID);
@@ -895,6 +895,7 @@ void doMap(int ID, int page, int frame);
 void implementMap();
 void selfie_map(int ID, int page, int frame);
 
+// Shared Memory Syscalls
 void emitShmOpen();
 void implementShmOpen();
 
@@ -907,42 +908,47 @@ void implementShmMap();
 void emitShmClose();
 void implementShmClose();
 
+// Lock Syscalls
 void emitLock();
+int  *doLock();
 void implementLock();
 
 void emitUnlock();
+void doUnlock();
 void implementUnlock();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 1;
-int debug_switch = 1;
-int debug_switch_Regs = 1;
-int debug_switch_memory = 1;
-int debug_status = 1;
-int debug_delete = 1;
-int debug_map    = 1;
+int debug_create = 0;
+int debug_switch = 0;
+int debug_switch_Regs = 0;
+int debug_switch_memory = 0;
+int debug_status = 0;
+int debug_delete = 0;
+int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 1;
 int debug_yield = 0;
-int debug_runOrHost = 1;
+int debug_runOrHost = 0;
+int debug_lock = 1;
 
-int SYSCALL_ID     = 4901;
-int SYSCALL_CREATE = 4902;
-int SYSCALL_SWITCH = 4903;
-int SYSCALL_STATUS = 4904;
-int SYSCALL_DELETE = 4905;
-int SYSCALL_MAP    = 4906;
-int SYSCALL_YIELD  = 4907;
-int SYSCALL_SHMO   = 4908;
-int SYSCALL_SHMS   = 4909;
-int SYSCALL_SHMM   = 4910;
-int SYSCALL_SHMC   = 4911;
-int SYSCALL_FORK_THREAD = 4912;
+int SYSCALL_ID              = 4901;
+int SYSCALL_CREATE          = 4902;
+int SYSCALL_SWITCH          = 4903;
+int SYSCALL_STATUS          = 4904;
+int SYSCALL_DELETE          = 4905;
+int SYSCALL_MAP             = 4906;
+int SYSCALL_YIELD           = 4907;
+int SYSCALL_SHMO            = 4908;
+int SYSCALL_SHMS            = 4909;
+int SYSCALL_SHMM            = 4910;
+int SYSCALL_SHMC            = 4911;
+int SYSCALL_FORK_THREAD     = 4912;
 int SYSCALL_FORK_THREAD_API = 4913;
-int SYSCALL_LOCK = 4914;
-int SYSCALL_UNLOCK = 4915;
+int SYSCALL_LOCK            = 4914;
+int SYSCALL_UNLOCK          = 4915;
+int SYSCALL_OUTPUT          = 4916;
 
 
 
@@ -1170,6 +1176,8 @@ int EXCEPTION_EXIT               = 5;
 int EXCEPTION_TIMER              = 6;
 int EXCEPTION_PAGEFAULT          = 7;
 int EXCEPTION_YIELD              = 8;
+int EXCEPTION_LOCK               = 9;
+int EXCEPTION_UNLOCK             = 10;
 
 int* EXCEPTIONS; // strings representing exceptions
 
@@ -1233,17 +1241,19 @@ int* storesPerAddress = (int*) 0; // number of executed stores per store operati
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
-  EXCEPTIONS = malloc(9 * SIZEOFINTSTAR);
+  EXCEPTIONS = malloc(11 * SIZEOFINTSTAR);
 
   *(EXCEPTIONS + EXCEPTION_NOEXCEPTION)        = (int) "no exception";
   *(EXCEPTIONS + EXCEPTION_UNKNOWNINSTRUCTION) = (int) "unknown instruction";
   *(EXCEPTIONS + EXCEPTION_UNKNOWNSYSCALL)     = (int) "unknown syscall";
   *(EXCEPTIONS + EXCEPTION_ADDRESSERROR)       = (int) "address error";
   *(EXCEPTIONS + EXCEPTION_HEAPOVERFLOW)       = (int) "heap overflow";
-  *(EXCEPTIONS + EXCEPTION_EXIT)               = (int) "exit";
+  *(EXCEPTIONS + EXCEPTION_EXIT)               = (int) "exit syscall";
   *(EXCEPTIONS + EXCEPTION_TIMER)              = (int) "timer interrupt";
   *(EXCEPTIONS + EXCEPTION_PAGEFAULT)          = (int) "page fault";
-  *(EXCEPTIONS + EXCEPTION_YIELD)              = (int) "yield";
+  *(EXCEPTIONS + EXCEPTION_YIELD)              = (int) "yield syscall";
+  *(EXCEPTIONS + EXCEPTION_LOCK)               = (int) "lock syscall";
+  *(EXCEPTIONS + EXCEPTION_UNLOCK)             = (int) "unlock syscall";
 }
 
 void resetInterpreter() {
@@ -1300,6 +1310,12 @@ void freeContext(int* context);
 int* deleteContext(int* context, int* from);
 void deleteThread(int* fromContext, int* thread);
 void insertThread(int *context, int *newThread);
+
+void printThreadList(int *context);
+
+int scheduleRoundRobin(int fromID);
+int scheduleRoundRobinThread(int fromID);
+int *schedule(int fromID);
 
 void mapPage(int* table, int page, int frame);
 
@@ -4368,6 +4384,7 @@ void selfie_compile() {
   emitWrite();
   emitOpen();
   emitMalloc();
+  emitOutput();
 
   emitID();
   emitYield();
@@ -5229,85 +5246,6 @@ void implementShmOpen() {
   *(registers+REG_V0) = get_shmo_id(shmo);
 }
 
-void emitLock() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*) "lock", 0, PROCEDURE, VOID_T, 0, binaryLength);
-
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
-
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-
-}
-
-void implementLock() {
-  int *thread;
-
-  // check if counter > 0. In this case, the lock is currently free
-  if (getLockCounter(global_lock) > 0) {
-
-    // decrement the lock counter
-    decrementLockCounter(global_lock);
-
-    print((int*)"Lock: 'You shall pass'");
-    println();
-
-    // the calling thread may continue its execution
-  }
-  else {
-    // if counter <= 0, then the lock is currently held by another thread
-    // that is, we have to put the calling thread to sleep and place its context into the wait queue of the lock
-
-    // delete thread from the thread list of the process
-    thread = getCurrentThread(currentContext);
-    deleteThread(currentContext, thread);
-
-    // set next/prev pointers to null just to make sure
-    setNextThread(thread, (int*) 0);
-    setPrevThread(thread, (int*) 0);
-
-    // enqueue the thread context into the wait queue for the global lock
-    enqueue(getLockQueue(global_lock), thread);
-
-    print((int*)"WEEEEE");
-    println();
-    implementUnlock();
-  }
-}
-
-void emitUnlock() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*) "unlock", 0, PROCEDURE, VOID_T, 0, binaryLength);
-
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
-
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
-}
-
-void implementUnlock() {
-  int *waitQueue;
-  int *thread;
-
-  waitQueue = getLockQueue(global_lock);
-
-  // check if wait queue is empty
-  if (isEmptyQueue(waitQueue)) {
-    // in this case, no other thread will be woken up
-    // just increment the counter again
-    incrementLockCounter(global_lock);
-  }
-  else {
-    // if the queue is not empty, do not increment the counter, but wake up the first
-    // thread in the wait queue
-    thread = dequeue(waitQueue);
-
-    setNextThread(thread, (int*) 0);
-    setPrevThread(thread, (int*) 0);
-
-    insertThread(currentContext, thread);
-  }
-}
-
-
 void emitExit() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "exit", 0, PROCEDURE, VOID_T, 0, binaryLength);
 
@@ -5735,6 +5673,25 @@ void implementMalloc() {
   }
 }
 
+void emitOutput() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "output", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    // load argument for exit
+    emitIFormat(OP_LW, REG_SP, REG_A0, 0); // output to be printed
+
+    // remove the argument from the stack
+    emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+
+    // load the correct syscall number and invoke syscall
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_OUTPUT);
+    emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+}
+
+void implementOutput() {
+    printInteger(*(registers + REG_A0));
+    println();
+}
+
 void emitYield() {
     createSymbolTableEntry(LIBRARY_TABLE, (int*)"yield", 0, PROCEDURE, INT_T, 0, binaryLength);
 
@@ -5772,6 +5729,143 @@ void emitForkThread() {
 // -----------------------------------------------------------------
 // ----------------------- HYPSTER SYSCALLS ------------------------
 // -----------------------------------------------------------------
+
+void emitLock() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "lock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementLock() {
+    throwException(EXCEPTION_LOCK, 0);
+}
+
+int *doLock() {
+    int *thread;
+    int *context;
+    int *newThread;
+
+    // retrieve the calling thread
+    context = currentContext;
+    thread = getCurrentThread(context);
+
+    // check if counter > 0. In this case, the lock is currently free
+    if (getLockCounter(global_lock) > 0) {
+
+        // decrement the lock counter
+        decrementLockCounter(global_lock);
+
+        // the calling thread may continue its execution
+        if (debug_lock) {
+            print((int *) "LOCK: thread ");
+            printInteger(getThreadID(thread));
+            print((int *) " in process ");
+            printInteger(getID(context));
+            print((int *) " is granted the lock");
+            println();
+        }
+    }
+    else {
+        // if counter <= 0, then the lock is currently held by another thread
+        // that is, we have to put the calling thread to sleep and place its context into the wait queue of the lock
+
+        if (debug_lock) {
+            print((int *) "LOCK: thread ");
+            printInteger(getThreadID(thread));
+            print((int *) " in process ");
+            printInteger(getID(context));
+            print((int *) " is refused the lock");
+            println();
+        }
+
+        // schedule a new thread
+        newThread = schedule(getID(context));
+
+        // delete current thread from the thread list of the process
+        deleteThread(currentContext, thread);
+
+        // set next/prev pointers to null just to make sure
+        setNextThread(thread, (int*) 0);
+        setPrevThread(thread, (int*) 0);
+
+        // enqueue the thread context into the wait queue for the global lock
+        enqueue(getLockQueue(global_lock), thread);
+
+        // return the newThread
+        thread = newThread;
+    }
+
+    return thread;
+}
+
+void emitUnlock() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "unlock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementUnlock() {
+    throwException(EXCEPTION_UNLOCK, 0);
+}
+
+void doUnlock() {
+    int *waitQueue;
+    int *thread;
+    int *context;
+
+    waitQueue = getLockQueue(global_lock);
+    context = currentContext;
+    thread = getCurrentThread(context);
+
+    // check if wait queue is empty
+    if (isEmptyQueue(waitQueue)) {
+
+        if (debug_lock) {
+            print((int *) "LOCK: thread ");
+            printInteger(getThreadID(thread));
+            print((int *) " of process ");
+            printInteger(getID(context));
+            print((int *) " releases the lock - no thread is waiting for it");
+            println();
+        }
+
+        // in this case, no other thread will be woken up
+        // just increment the counter again
+        incrementLockCounter(global_lock);
+    }
+    else {
+
+        if (debug_lock) {
+            print((int *) "LOCK: thread ");
+            printInteger(getThreadID(thread));
+            print((int *) " in process ");
+            printInteger(getID(context));
+            print((int *) " releases the lock - there is a waiting thread");
+            println();
+        }
+
+        // if the queue is not empty, do not increment the counter, but wake up the first
+        // thread in the wait queue
+        thread = dequeue(waitQueue);
+
+        setNextThread(thread, (int*) 0);
+        setPrevThread(thread, (int*) 0);
+
+        // find the context the woken up thread belongs to
+        context = findContext(getThreadPID(thread), usedContexts);
+
+
+        // insert the thread into the thread list of that context
+        insertThread(context, thread);
+
+    }
+}
 
 void emitID() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_ID", 0, PROCEDURE, INT_T, 0, binaryLength);
@@ -6275,52 +6369,6 @@ int* createContextThread(int* context) {
   setThreads(context, newThread);
 
   return newThread;
-}
-
-int scheduleRoundRobinThread(int fromID) {
-  int *currContext;
-  int *nextThread;
-  int toThreadID;
-  //get current context
-  currContext = findContext(fromID, usedContexts);
-
-  //schedule to the next thread
-  nextThread = getNextThread(getCurrentThread(currContext));
-  if(nextThread == (int*) 0){
-    toThreadID = -1;
-  } else {
-    toThreadID = getThreadID(nextThread);
-  }
-
-  if (debug_scheduling){
-    print((int*) "next Thread: ");
-    printInteger(toThreadID);
-    println();
-  }
-
-  return toThreadID;
-}
-
-
-int scheduleRoundRobin(int fromID) {
-  int *nextContext;
-  int *currContext;
-  //get current context
-  currContext = findContext(fromID, usedContexts);
-
-    // find next context
-  nextContext = getNextContext(currContext);
-  if (nextContext == (int *) 0) {
-    nextContext = usedContexts;
-  }
-
-  if (debug_scheduling){
-    print((int*) "next context ");
-    printInteger(getID(nextContext));
-    println();
-  }
-
-  return getID(nextContext);
 }
 
 void emitStatus() {
@@ -7006,6 +7054,9 @@ void fct_syscall() {
       implementLock();
     else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
       implementUnlock();
+    }
+    else if (*(registers+REG_V0) == SYSCALL_OUTPUT) {
+      implementOutput();
     }
     else {
       pc = pc - WORDSIZE;
@@ -8153,7 +8204,6 @@ void insertThread(int *context, int *newThread) {
   // make newThread the head of the thread list
   setNextThread(newThread, threads);
 
-
   // if the thread list is not empty, update previous pointer of old head
   if (threads != (int*) 0) {
     setPrevThread(threads, newThread);
@@ -8162,6 +8212,97 @@ void insertThread(int *context, int *newThread) {
   else {
     setCurrThread(context, newThread);
   }
+
+  setThreads(context, newThread);
+}
+
+
+int scheduleRoundRobinThread(int fromID) {
+    int *currContext;
+    int *nextThread;
+    int toThreadID;
+    //get current context
+    currContext = findContext(fromID, usedContexts);
+
+    //schedule to the next thread
+    nextThread = getNextThread(getCurrentThread(currContext));
+
+    if(nextThread == (int*) 0){
+        toThreadID = -1;
+    } else {
+        toThreadID = getThreadID(nextThread);
+    }
+
+    return toThreadID;
+}
+
+
+int scheduleRoundRobin(int fromID) {
+    int *nextContext;
+    int *currContext;
+    //get current context
+    currContext = findContext(fromID, usedContexts);
+
+    // find next context
+    nextContext = getNextContext(currContext);
+    if (nextContext == (int *) 0) {
+        nextContext = usedContexts;
+    }
+
+
+    return getID(nextContext);
+}
+
+
+int *schedule(int fromPID) {
+    int toTID;
+    int toPID;
+    int *thread;
+    int *context;
+
+    toPID = fromPID;
+    toTID = scheduleRoundRobinThread(fromPID);
+
+    if(toTID < 0){
+        toPID = scheduleRoundRobin(fromPID);
+        toTID = getThreadID(getThreads(findContext(toPID, usedContexts)));
+    }
+
+    context = findContext(toPID, usedContexts);
+    thread = findThread(getThreads(context), toTID);
+
+    if (debug_scheduling){
+        print((int*) "SCHEDULE: (P: ");
+        printInteger(getID(currentContext));
+        print((int*)", T: ");
+        printInteger(getThreadID(getCurrentThread(currentContext)));
+        print((int*)")");
+        print((int*)" -> ");
+        print((int*) "(P: ");
+        printInteger(getID(context));
+        print((int*)", T: ");
+        printInteger(getThreadID(thread));
+        print((int*)")");
+        println();
+    }
+
+    return thread;
+}
+
+void printThreadList(int *context) {
+    int *thread;
+
+    thread = getThreads(context);
+
+    print((int*)"thread list of context ");
+    printInteger(getID(context));
+    print((int*)": ");
+    while (thread != (int*) 0) {
+        printInteger(getThreadID(thread));
+        print((int*)" ");
+        thread = getNextThread(thread);
+    }
+    println();
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -8415,13 +8556,14 @@ int runUntilExitWithoutExceptionHandling(int toID) {
 
 int runOrHostUntilExitWithPageFaultHandling(int toID) {
   // works with mipsters and hypsters
-  int fromID;
+  int fromPID;
   int* fromContext;
   int savedStatus;
   int exceptionNumber;
   int exceptionParameter;
   int frame;
-  int toThreadID = 0;
+  int toTID = 0;
+  int *thread;
 
   while (1) {
     //toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
@@ -8431,12 +8573,12 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       print((int *) " runOrHostUntilExitWithPageFaultHandling: toID ");
       printInteger(toID);
       print((int *) " threadID ");
-      printInteger(toThreadID);
+      printInteger(toTID);
       println();
     }
 
-    fromID = selfie_switch(toID, toThreadID);
-    fromContext = findContext(fromID, usedContexts);
+    fromPID = selfie_switch(toID, toTID);
+    fromContext = findContext(fromPID, usedContexts);
 
     // assert: fromContext must be in usedContexts (created here)
     if (getParent(fromContext) != selfie_ID()) {
@@ -8453,21 +8595,20 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
 
       if (exceptionNumber == EXCEPTION_PAGEFAULT) {
         frame = (int) palloc();
-
         // TODO: use this table to unmap and reuse frames
         mapPage(getPT(fromContext), exceptionParameter, frame);
 
         // page table on microkernel boot level
-        selfie_map(fromID, exceptionParameter, frame);
-      } else if (exceptionNumber == EXCEPTION_EXIT) {
-
+        selfie_map(fromPID, exceptionParameter, frame);
+      }
+      else if (exceptionNumber == EXCEPTION_EXIT) {
         //delete current context
         //toThreadID = getThreadID(getCurrentThread(fromContext));
-        selfie_delete(fromID, toThreadID);
+        selfie_delete(fromPID, toTID);
 
         //if hypster is used, also delete context from its local contexts.
         if (mipster == 0)
-          doDelete(fromID, toThreadID);
+          doDelete(fromPID, toTID);
 
         //if context list is now empty, then terminate
         if (usedContexts == (int *) 0) {
@@ -8476,24 +8617,33 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
           //otherwise: schedule other process. TODO: make this more fair
         else {
           toID = getID(usedContexts);
-          toThreadID = getThreadID(getThreads(usedContexts));
+          toTID = getThreadID(getThreads(usedContexts));
         }
+      }
+      else if (exceptionNumber == EXCEPTION_LOCK) {
+          thread = doLock();
+
+          toID = getThreadPID(thread);
+          toTID = getThreadID(thread);
+      }
+      else if (exceptionNumber == EXCEPTION_UNLOCK) {
+          doUnlock();
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
-        toThreadID = scheduleRoundRobinThread(fromID);
-        if(toThreadID < 0){
-          toID = scheduleRoundRobin(fromID);
-          toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
-        }
+          thread = schedule(fromPID);
+
+          toID = getThreadPID(thread);
+          toTID = getThreadID(thread);
+
       }
       else if (exceptionNumber == EXCEPTION_TIMER) {
-        toThreadID = scheduleRoundRobinThread(fromID);
-        if(toThreadID < 0){
-          toID = scheduleRoundRobin(fromID);
-          toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
-        }
-      } else {
+          thread = schedule(fromPID);
+
+          toID = getThreadPID(thread);
+          toTID = getThreadID(thread);
+      }
+      else {
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
         printInteger(getID(fromContext));
