@@ -924,11 +924,12 @@ int debug_switch = 0;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
+int debug_boot = 0;
 int debug_delete = 0;
 int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
-int debug_scheduling = 1;
+int debug_scheduling = 0;
 int debug_yield = 0;
 int debug_runOrHost = 0;
 int debug_lock = 1;
@@ -1578,7 +1579,7 @@ void up_loadArguments(int* table, int argc, int* argv);
 
 void mapUnmappedPages(int* table);
 
-void down_mapPageTable(int* context);
+void down_mapPageTable(int* context, int* thread);
 
 int runUntilExitWithoutExceptionHandling(int toID);
 int runOrHostUntilExitWithPageFaultHandling(int toID);
@@ -5982,7 +5983,9 @@ void emitThreadFork() {
 
 void implementThreadFork() {
   int ret;
-  print((int *) "hypster_threadFork");
+  if (debug_threadFork) {
+    print((int *) "hypster_threadFork");
+  }
   ret = doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
   *(registers+REG_V1) = ret;
   //TODO RUPI: fork the thread
@@ -6157,7 +6160,7 @@ int doThreadFork(int contextID, int threadID) {
     println();
   }
 
-  down_mapPageTable(toContext);
+  //down_mapPageTable(toContext, newThread);
 
 
   return getThreadID(newThread);
@@ -6173,6 +6176,16 @@ int doSwitch(int toID, int toThreadID) {
   //if (currentContext != (int*) 0){
   //  setConPrevThread(currentContext, getCurrentThread(currentContext));
   //}
+
+  if (debug_switch) {
+    print((int*) "switching from ");
+    printInteger(fromID);
+    print((int*) " to C ");
+    printInteger(toID);
+    print((int*) " T ");
+    printInteger(toThreadID);
+    println();
+  }
 
   // find the context we want to switch to
   toContext = findContext(toID, usedContexts);
@@ -6219,6 +6232,8 @@ int doSwitch(int toID, int toThreadID) {
 
 void implementSwitch() {
   int fromID;
+  int threadID;
+  int id;
 
   if (debug_switch) {
     print((int*) "hypster_switch");
@@ -6228,7 +6243,12 @@ void implementSwitch() {
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
   // before evaluating the rvalue doSwitch()
-  fromID = doSwitch(*(registers+REG_A0), *(registers+REG_A1));
+  id = *(registers + REG_A0);
+  threadID = *(registers + REG_A1);
+  print((int*) "threadID ");
+          printInteger(threadID);
+  println();
+  fromID = doSwitch(id, threadID);
 
 
   // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
@@ -6294,6 +6314,12 @@ int mipster_switch(int toID, int threadID) {
 
   runUntilException();
 
+  thread = getCurrentThread(currentContext);
+  setThreadPC(thread, pc);
+  setThreadRegHi(thread, reg_hi);
+  setThreadRegLo(thread, reg_lo);
+  setBreak(currentContext, brk);
+
   return getID(currentContext);
 }
 
@@ -6312,8 +6338,10 @@ int selfie_switch(int toID, int threadID) {
 int mipster_threadFork(int contextID, int threadID) {
   int retID;
 
-  print((int *) "mipster_threadFork");
-  println();
+  if (debug_threadFork) {
+    print((int *) "mipster_threadFork");
+    println();
+  }
 
   // this procedure is only executed at boot level zero
   retID = doThreadFork(contextID, threadID);
@@ -8018,7 +8046,7 @@ int* allocateContext(int ID, int parentID) {
   setThreadRegHi(mainThread, 0);
   setThreads(context, mainThread);
   setCurrThread(context, mainThread);
-  setConPrevThread(context, mainThread);
+  setConPrevThread(context, (int*) 0);
 
   return context;
 }
@@ -8072,83 +8100,14 @@ void switchContext(int *from, int *to) {
   int i;
   // assert : every process has at least one thread
 
-  // save state of the current thread and process
-  thread = getConPrevThread(from);
-  if (from != (int *) 0) {
-    if (thread != (int*) 0) {
-      if (debug_switch_Regs) {
-        print((int *) "from ID: ");
-        printInteger(getID(from));
-        print((int *) " fromThreadID: ");
-        printInteger(getThreadID(thread));
-        if(registers != (int*) 0 ) {
-          print((int *) " old SP: ");
-          printInteger(*(registers + REG_SP));
-        }
-        print((int *) " old PC: ");
-        printInteger(pc);
-      }
-      if (debug_switch_memory) {
-        println();
-        i = -4 * WORDSIZE;
-        while (i < 5 * WORDSIZE) {
-          printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-          print((int *) " - ");
-          printInteger(*(tlb(getPT(from), *(getThreadRegs(thread) + REG_SP) + i)));
-          println();
-          i = i + WORDSIZE;
-        }
-      }
-      // save machine state
-      setThreadPC(thread, pc);
-      setThreadRegHi(thread, reg_hi);
-      setThreadRegLo(thread, reg_lo);
-      setBreak(from, brk);
-    }
-  }
-
   // load context of new thread and process
   thread = getCurrentThread(to);
-
-  if (debug_switch_Regs) {
-    print((int *) ", ID: ");
-    printInteger(getID(to));
-    print((int *) " threadID: ");
-    printInteger(getThreadID(thread));
-    print((int *) " new SP: ");
-    printInteger(*(getThreadRegs(thread) + REG_SP));
-    print((int *) " new PC: ");
-    printInteger(getThreadPC(thread));
-    println();
-  }
-  if (debug_switch_memory) {
-    i = -4 * WORDSIZE;
-    while (i < 5 * WORDSIZE) {
-      printInteger(*(getThreadRegs(thread) + REG_SP) + i);
-      print((int *) " - ");
-      printInteger(*(tlb(getPT(to), *(getThreadRegs(thread) + REG_SP) + i)));
-      println();
-      i = i + WORDSIZE;
-    }
-  }
-  //if(from != (int*) 0){
-    //if (thread != getPrevThread(from)){
-    //  pc = getThreadPC(thread);
-    //  registers = getThreadRegs(thread);
-    //  reg_hi = getThreadRegHi(thread);
-    //  reg_lo = getThreadRegLo(thread);
-    //  pt = getPT(to);
-   //   brk = getBreak(to);
-   // }
-  //} else {
-    // restore machine state
     pc = getThreadPC(thread);
     registers = getThreadRegs(thread);
     reg_hi = getThreadRegHi(thread);
     reg_lo = getThreadRegLo(thread);
     pt = getPT(to);
     brk = getBreak(to);
-  //}
 
 
 }
@@ -8474,9 +8433,8 @@ void mapUnmappedPages(int* table) {
   }
 }
 
-void down_mapPageTable(int* context) {
+void down_mapPageTable(int* context, int* thread) {
   int page;
-  int* thread;
 
   // assert: context page table is only mapped from beginning up and end down
   // assert: also map all pages from the stacks of all threads
@@ -8489,19 +8447,21 @@ void down_mapPageTable(int* context) {
     page = page + 1;
   }
 
-  thread = getThreads(context);
-  while (thread != (int*) 0){
-    print("try mapping ");
+
+  if (debug_map) {
     printInteger(selfie_ID());
+    print((int *) " tries mapping context ");
+    printInteger(getID(context));
+    print((int *) " thread ");
+    printInteger(getThreadID(thread));
     println();
+  }
 
-    page = (VIRTUALMEMORYSIZE - WORDSIZE - STACKSIZEPERTHREAD * getThreadID(thread)) / PAGESIZE;
-    while (isPageMapped(getPT(context), page)) {
-      selfie_map(getID(context), page, getFrameForPage(getPT(context), page));
+  page = (VIRTUALMEMORYSIZE - WORDSIZE - STACKSIZEPERTHREAD * getThreadID(thread)) / PAGESIZE;
+  while (isPageMapped(getPT(context), page)) {
+    selfie_map(getID(context), page, getFrameForPage(getPT(context), page));
 
-      page = page - 1;
-    }
-    thread = getNextThread(thread);
+    page = page - 1;
   }
 }
 
@@ -8721,6 +8681,7 @@ int boot(int argc, int* argv) {
   int counter;
   int currentID;
   int* thread;
+  int* context;
 
   print(selfieName);
   print((int*) ": this is selfie's ");
@@ -8746,16 +8707,44 @@ int boot(int argc, int* argv) {
     printInteger(currentID);
     println();
     // create duplicate of the initial context on our boot level
-    usedContexts = createContext(currentID, selfie_ID(), (int*) 0);
+    usedContexts = allocateContext(currentID, selfie_ID());
 
-    print((int*) "uppermost context: ");
-    printInteger(getID(usedContexts));
-    println();
+    if (debug_boot) {
+      print((int*) "hypster create");
+      println();
+      context = usedContexts;
+      while(context != (int*) 0){
+        print((int*) "contextID ");
+        printInteger(getID(context));
+        print((int*) " PT ");
+        printInteger((int) getPT(context));
+        print((int*) " curThread ");
+        if(getCurrentThread(context) != (int*)0 ) {
+          printInteger(getThreadID(getCurrentThread(context)));
+        }
+        thread = getThreads(context);
+        while(thread != (int*) 0){
+          println();
+          print((int*) "    ThreadID ");
+          printInteger(getThreadID(thread));
+          print((int*) " PC ");
+          printInteger(getThreadPC(thread));
+          print((int*) " REG-P ");
+          printInteger((int) getThreadRegs(thread));
+          print((int*) " thread-P ");
+          printInteger((int) getNextThread(thread));
+          thread = getNextThread(thread);
+        }
+        println();
+        context = getNextContext(context);
+      }
+      println();
+    }
   }
 
   up_loadBinary(getPT(usedContexts));
   up_loadArguments(getPT(usedContexts), argc, argv);
-  down_mapPageTable(usedContexts);
+  down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
