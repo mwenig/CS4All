@@ -837,6 +837,10 @@ void implementYield();
 void emitForkThread();
 void implementThreadFork();
 void implementThreadForkAPI();
+void implementID();
+// for debugging purposes
+
+
 
 void emitOutput();
 void implementOutput();
@@ -917,9 +921,13 @@ void emitUnlock();
 void doUnlock();
 void implementUnlock();
 
+// For debugging purposes
+void emitGetTid();
+void implementGetTid();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 0;
+int debug_create = 1;
 int debug_switch = 0;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
@@ -950,6 +958,7 @@ int SYSCALL_FORK_THREAD_API = 4913;
 int SYSCALL_LOCK            = 4914;
 int SYSCALL_UNLOCK          = 4915;
 int SYSCALL_OUTPUT          = 4916;
+int SYSCALL_GETTID          = 4917;
 
 
 
@@ -4403,7 +4412,6 @@ void selfie_compile() {
   emitOpen();
   emitMalloc();
   emitOutput();
-
   emitID();
   emitYield();
   emitForkThread();
@@ -4419,6 +4427,7 @@ void selfie_compile() {
   emitShmSize();
   emitLock();
   emitUnlock();
+  emitGetTid();
 
 
   while (link) {
@@ -5732,6 +5741,7 @@ void implementYield() {
   throwException(EXCEPTION_YIELD, 0);
 }
 
+
 void emitForkThread() {
   createSymbolTableEntry(LIBRARY_TABLE, (int *) "forkThread", 0, PROCEDURE, INT_T, 0, binaryLength);
 
@@ -5884,6 +5894,21 @@ void doUnlock() {
     }
 }
 
+void emitGetTid() {
+    createSymbolTableEntry(LIBRARY_TABLE, (int*) "get_tid", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETTID);
+    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementGetTid() {
+    int tid;
+    tid = getThreadID(getCurrentThread(currentContext));
+    *(registers + REG_V0) = tid;
+}
+
 void emitID() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_ID", 0, PROCEDURE, INT_T, 0, binaryLength);
 
@@ -6003,19 +6028,25 @@ void implementThreadFork() {
     print((int *) "hypster_threadFork");
   }
   ret = doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
-  *(registers+REG_V1) = ret;
+  *(registers+REG_V0) = ret;
   //TODO RUPI: fork the thread
 }
 
 void implementThreadForkAPI() {
   int ret;
+  int *newThread;
   //print((int *) "threadFork_API");
   //println();
 
   //TODO RUPI: fork the thread
   setThreadPC(getCurrentThread(currentContext), pc);
   ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
-  *(registers+REG_V1) = ret;
+  newThread = findThread(getThreads(currentContext), ret);
+
+  // the calling thread receives the id of the forked thread
+  *(registers+REG_V0) = ret;
+  // the forked thread itself receives 0
+  *(getThreadRegs(newThread) + REG_V0) = 0;
 }
 
 
@@ -6492,6 +6523,8 @@ void doDelete(int ID, int threadID) {
       }
 
       deleteThread(context, thread);
+
+        printThreadLists();
 
       if (getThreads(context) == (int*) 0) {
         // check if a thread of the process is still waiting in the wait queue of the lock.
@@ -7092,11 +7125,13 @@ void fct_syscall() {
       implementThreadForkAPI();
     else if (*(registers+REG_V0) == SYSCALL_LOCK)
       implementLock();
-    else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
+    else if (*(registers+REG_V0) == SYSCALL_UNLOCK)
       implementUnlock();
-    }
     else if (*(registers+REG_V0) == SYSCALL_OUTPUT) {
-      implementOutput();
+        implementOutput();
+    }
+    else if (*(registers+REG_V0) == SYSCALL_GETTID) {
+        implementGetTid();
     }
     else {
       pc = pc - WORDSIZE;
