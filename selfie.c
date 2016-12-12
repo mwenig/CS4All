@@ -916,18 +916,18 @@ void implementUnlock();
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
-int debug_switch = 0;
+int debug_switch = 1;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_boot = 0;
 int debug_delete = 0;
 int debug_map    = 0;
-int debug_threadFork = 0;
+int debug_threadFork = 1;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
-int debug_runOrHost = 0;
+int debug_runOrHost = 1;
 
 int SYSCALL_ID     = 4901;
 int SYSCALL_CREATE = 4902;
@@ -1171,6 +1171,7 @@ int EXCEPTION_EXIT               = 5;
 int EXCEPTION_TIMER              = 6;
 int EXCEPTION_PAGEFAULT          = 7;
 int EXCEPTION_YIELD              = 8;
+int EXCEPTION_FORK               = 9;
 
 int* EXCEPTIONS; // strings representing exceptions
 
@@ -1234,7 +1235,7 @@ int* storesPerAddress = (int*) 0; // number of executed stores per store operati
 // ------------------------- INITIALIZATION ------------------------
 
 void initInterpreter() {
-  EXCEPTIONS = malloc(9 * SIZEOFINTSTAR);
+  EXCEPTIONS = malloc(10 * SIZEOFINTSTAR);
 
   *(EXCEPTIONS + EXCEPTION_NOEXCEPTION)        = (int) "no exception";
   *(EXCEPTIONS + EXCEPTION_UNKNOWNINSTRUCTION) = (int) "unknown instruction";
@@ -1245,6 +1246,7 @@ void initInterpreter() {
   *(EXCEPTIONS + EXCEPTION_TIMER)              = (int) "timer interrupt";
   *(EXCEPTIONS + EXCEPTION_PAGEFAULT)          = (int) "page fault";
   *(EXCEPTIONS + EXCEPTION_YIELD)              = (int) "yield";
+  *(EXCEPTIONS + EXCEPTION_FORK)               = (int) "fork";
 }
 
 void resetInterpreter() {
@@ -5891,8 +5893,21 @@ void implementThreadFork() {
   int ret;
   if (debug_threadFork) {
     print((int *) "hypster_threadFork");
+    println();
   }
+  //setThreadPC(getCurrentThread(currentContext), pc);
   ret = doThreadFork(*(registers + REG_A0), *(registers + REG_A1));
+
+  if (debug_threadFork) {
+    printInteger(selfie_ID());
+    print((int *) " returning from ThreadForkImpl - PC ");
+    printInteger(pc);
+    print((int *) " - current C ");
+    printInteger(getID(currentContext));
+    print((int *) " T ");
+    printInteger(getThreadID(getCurrentThread(currentContext)));
+    println();
+  }
   *(registers+REG_V1) = ret;
   //TODO RUPI: fork the thread
 }
@@ -5903,9 +5918,19 @@ void implementThreadForkAPI() {
   //println();
 
   //TODO RUPI: fork the thread
-  setThreadPC(getCurrentThread(currentContext), pc);
-  ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
-  *(registers+REG_V1) = ret;
+  printInteger(selfie_ID());
+  print((int*) " saving pc to C ");
+  printInteger(getID(currentContext));
+  print((int*) " T ");
+  printInteger(getThreadID(getCurrentThread(currentContext)));
+  print((int*) " - PC ");
+  printInteger(pc);
+  println();
+    setThreadPC(getCurrentThread(currentContext), pc);
+  //pc = pc + WORDSIZE;
+  //ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
+  //*(registers+REG_V1) = ret;
+  throwException(EXCEPTION_FORK, 0);
 }
 
 
@@ -6066,7 +6091,7 @@ int doThreadFork(int contextID, int threadID) {
     println();
   }
 
-  //down_mapPageTable(toContext, newThread);
+  //  down_mapPageTable(toContext, newThread);
 
 
   return getThreadID(newThread);
@@ -6084,7 +6109,8 @@ int doSwitch(int toID, int toThreadID) {
   //}
 
   if (debug_switch) {
-    print((int*) "switching from ");
+    printInteger(selfie_ID());
+    print((int*) " DoSwitch: switching from ");
     printInteger(fromID);
     print((int*) " to C ");
     printInteger(toID);
@@ -6140,9 +6166,36 @@ void implementSwitch() {
   int fromID;
   int threadID;
   int id;
+  int* context;
+  int* thread;
 
   if (debug_switch) {
     print((int*) "hypster_switch");
+    println();
+    context = usedContexts;
+    while(context != (int*) 0){
+      print((int*) "contextID ");
+      printInteger(getID(context));
+      print((int*) " PT ");
+      printInteger((int) getPT(context));
+      print((int*) " curThreads ");
+      if(getCurrentThread(context) != (int*)0 ) {
+        printInteger(getThreadID(getCurrentThread(context)));
+      }
+      thread = getThreads(context);
+      while(thread != (int*) 0){
+        println();
+        print((int*) "    ThreadID ");
+        printInteger(getThreadID(thread));
+        print((int*) " PC ");
+        printInteger(getThreadPC(thread));
+        print((int*) " REG-P ");
+        printInteger((int) getThreadRegs(thread));
+        thread = getNextThread(thread);
+      }
+      println();
+      context = getNextContext(context);
+    }
     println();
   }
 
@@ -6151,9 +6204,7 @@ void implementSwitch() {
   // before evaluating the rvalue doSwitch()
   id = *(registers + REG_A0);
   threadID = *(registers + REG_A1);
-  print((int*) "threadID ");
-          printInteger(threadID);
-  println();
+
   fromID = doSwitch(id, threadID);
 
 
@@ -6215,16 +6266,42 @@ int mipster_switch(int toID, int threadID) {
     }
   }
 
+
   // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
   *(registers+REG_V1) = fromID;
 
   runUntilException();
 
+  if(debug_switch){
+    printInteger(selfie_ID());
+    print((int*) " endingSwitch! old PC ");
+    printInteger(pc);
+    if (registers != (int*) 0) {
+      print((int*) " old SP ");
+      printInteger(*(registers + REG_SP));
+    }
+  }
+
+  //thread = findThread(getThreads(findContext(toID, usedContexts)), threadID);
   thread = getCurrentThread(currentContext);
   setThreadPC(thread, pc);
   setThreadRegHi(thread, reg_hi);
   setThreadRegLo(thread, reg_lo);
   setBreak(currentContext, brk);
+
+  if(debug_switch){
+    print((int*) " to ID ");
+    printInteger(getID(currentContext));
+    print((int*) " to T-ID ");
+    printInteger(getThreadID(thread));
+    print((int*) " PC ");
+    printInteger(pc);
+    if (registers != (int*) 0) {
+      print((int*) " SP ");
+      printInteger(*(registers + REG_SP));
+    }
+    println();
+  }
 
   return getID(currentContext);
 }
@@ -6268,12 +6345,15 @@ int selfie_threadFork(int contextID, int threadID){
   if(mipster){
     return mipster_threadFork(contextID, threadID);
   } else {
-    print((int*) "creating new thread by hypsterLand");
 
-    println();
     newThreadID = hypster_threadFork(contextID, threadID);
     newThread = createContextThread(findContext(contextID, usedContexts));
     setThreadID(newThread, newThreadID);
+    if (debug_threadFork) {
+      print((int*) "creating new thread by hypster, T-ID ");
+      printInteger(newThreadID);
+      println();
+    }
     return newThreadID;
   }
 }
@@ -8046,17 +8126,40 @@ int* findThread(int* threads, int id) {
 
 void switchContext(int *from, int *to) {
   int *thread;
-  int i;
   // assert : every process has at least one thread
+
+  if(debug_switch){
+    printInteger(selfie_ID());
+    print((int*) " active Switch! old PC ");
+    printInteger(pc);
+    if (registers != (int*) 0) {
+      print((int*) " old SP ");
+      printInteger(*(registers + REG_SP));
+    }
+  }
 
   // load context of new thread and process
   thread = getCurrentThread(to);
-    pc = getThreadPC(thread);
-    registers = getThreadRegs(thread);
-    reg_hi = getThreadRegHi(thread);
-    reg_lo = getThreadRegLo(thread);
-    pt = getPT(to);
-    brk = getBreak(to);
+  pc = getThreadPC(thread);
+  registers = getThreadRegs(thread);
+  reg_hi = getThreadRegHi(thread);
+  reg_lo = getThreadRegLo(thread);
+  pt = getPT(to);
+  brk = getBreak(to);
+
+  if(debug_switch){
+    print((int*) " to ID ");
+    printInteger(getID(to));
+    print((int*) " to T-ID ");
+    printInteger(getThreadID(thread));
+    print((int*) " PC ");
+    printInteger(pc);
+    if (registers != (int*) 0) {
+      print((int*) " SP ");
+      printInteger(*(registers + REG_SP));
+    }
+    println();
+  }
 
 
 }
@@ -8412,7 +8515,28 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       exceptionNumber = decodeExceptionNumber(savedStatus);
       exceptionParameter = decodeExceptionParameter(savedStatus);
 
-      if (exceptionNumber == EXCEPTION_PAGEFAULT) {
+      if (exceptionNumber == EXCEPTION_FORK) {
+        if(debug_threadFork){
+          print((int*) "caught fork, coming from");
+          printInteger(fromID);
+          print((int*) " forking C ");
+          printInteger(toID);
+          print((int*) " T ");
+          printInteger(toThreadID);
+        }
+        //if(mipster == 0) {
+        //  createContextThread(fromContext);
+        //}
+        selfie_threadFork(toID, toThreadID);
+
+        if (debug_threadFork) {
+          print((int*) "comming from the threadFork - toID ");
+          printInteger(toID);
+          print((int*) " T ");
+          printInteger(toThreadID);
+          println();
+        }
+      } else if (exceptionNumber == EXCEPTION_PAGEFAULT) {
         frame = (int) palloc();
 
         // TODO: use this table to unmap and reuse frames
@@ -8455,6 +8579,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
           toThreadID = getThreadID(getThreads(findContext(toID, usedContexts)));
         }
       } else {
+        printInteger(selfie_ID());
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
         printInteger(getID(fromContext));
