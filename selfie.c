@@ -925,14 +925,14 @@ int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_boot = 0;
-int debug_delete = 0;
+int debug_delete = 1;
 int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
 int debug_scheduling = 0;
 int debug_yield = 0;
 int debug_runOrHost = 0;
-int debug_lock = 1;
+int debug_lock = 0;
 
 int SYSCALL_ID              = 4901;
 int SYSCALL_CREATE          = 4902;
@@ -1313,6 +1313,7 @@ void deleteThread(int* fromContext, int* thread);
 void insertThread(int *context, int *newThread);
 
 void printThreadList(int *context);
+void printThreadLists();
 
 int scheduleRoundRobin(int fromID);
 int scheduleRoundRobinThread(int fromID);
@@ -1487,6 +1488,8 @@ void printQueue(int *queue) {
 // -------------------------------------- LOCKS ----------------------------------------------
 // -------------------------------------------------------------------------------------------
 
+int* global_lock = (int*) 0;
+
 // lockstruct
 // +--------------+
 // | 0 | counter  |
@@ -1499,6 +1502,8 @@ void setLockCounter(int *lock, int counter);
 void setLockQueue(int *lock, int *queue);
 void incrementLockCounter(int *lock);
 void decrementLockCounter(int *lock);
+
+int threadWaitsInQueue(int PID);
 
 int *createLock();
 
@@ -1517,6 +1522,20 @@ void incrementLockCounter(int *lock) {
 
 void decrementLockCounter(int *lock) {
   setLockCounter(lock, getLockCounter(lock) - 1);
+}
+
+int threadWaitsInQueue(int PID) {
+    int *thread;
+
+    thread = getHead(getLockQueue(global_lock));
+
+    while (thread != (int*) 0) {
+        if (getThreadPID(thread) == PID) {
+            return 1;
+        }
+        thread = getNextThread(thread);
+    }
+    return 0;
 }
 
 int *createLock() {
@@ -1544,8 +1563,6 @@ int MIPSTER_ID = -1;
 int bumpID; // counter for generating unique context IDs
 
 int* currentContext = (int*) 0; // context currently running
-
-int* global_lock = (int*) 0;
 
 
 int* usedContexts = (int*) 0; // doubly-linked list of used contexts
@@ -5798,7 +5815,6 @@ int *doLock() {
         // return the newThread
         thread = newThread;
     }
-
     return thread;
 }
 
@@ -6459,7 +6475,6 @@ void emitDelete() {
 void doDelete(int ID, int threadID) {
   int* context;
   int* thread;
-  int* waitQueue;
 
   context = findContext(ID, usedContexts);
 
@@ -6479,12 +6494,9 @@ void doDelete(int ID, int threadID) {
       deleteThread(context, thread);
 
       if (getThreads(context) == (int*) 0) {
-        waitQueue = getLockQueue(global_lock);
         // check if a thread of the process is still waiting in the wait queue of the lock.
         // if this is the case, the process itself must not be deleted yet.
-        // TODO: this may cause a process to have no active threads, but only waiting ones
-        // TODO: what to do when scheduling that process? 
-        if (findThread(getHead(waitQueue), getThreadID(thread)) == (int *) 0) {
+        if (threadWaitsInQueue(getID(context)) == 0) {
           if (debug_delete) {
             print((int *) "no threads left, delete context ");
             printInteger(getID(context));
@@ -8045,6 +8057,7 @@ int* allocateContext(int ID, int parentID) {
   setThreadRegLo(mainThread, 0);
   setThreadRegHi(mainThread, 0);
   setThreads(context, mainThread);
+  setThreadPID(mainThread, getID(context));
   setCurrThread(context, mainThread);
   setConPrevThread(context, (int*) 0);
 
@@ -8204,8 +8217,19 @@ int scheduleRoundRobin(int fromID) {
 
     // find next context
     nextContext = getNextContext(currContext);
+    // if next context is null, move to start of thread list
     if (nextContext == (int *) 0) {
         nextContext = usedContexts;
+    }
+
+    // if nextContext has no active threads, schedule the next thread in the list until
+    // we find a process with active threads
+    // TODO: make this more elegant/efficient
+    while (getThreads(nextContext) == (int*) 0) {
+        nextContext = getNextContext(nextContext);
+        if (nextContext == (int *) 0) {
+            nextContext = usedContexts;
+        }
     }
 
 
@@ -8221,6 +8245,7 @@ int *schedule(int fromPID) {
 
     toPID = fromPID;
     toTID = scheduleRoundRobinThread(fromPID);
+
 
     if(toTID < 0){
         toPID = scheduleRoundRobin(fromPID);
@@ -8262,6 +8287,16 @@ void printThreadList(int *context) {
         thread = getNextThread(thread);
     }
     println();
+}
+
+void printThreadLists() {
+    int *context;
+    context = usedContexts;
+
+    while (context != (int*)0) {
+        printThreadList(context);
+        context = getNextContext(context);
+    }
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -8592,7 +8627,6 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
           thread = schedule(fromPID);
-
           toID = getThreadPID(thread);
           toTID = getThreadID(thread);
 
@@ -8700,51 +8734,55 @@ int boot(int argc, int* argv) {
   resetInterpreter();
   resetMicrokernel();
 
-  currentID = selfie_create();
+  counter = 0;
+  while (counter < INSTANCE_COUNT) {
+      currentID = selfie_create();
 
-  if (usedContexts == (int*) 0){
-    print((int*) "creating context, since i am a hypster ");
-    printInteger(currentID);
-    println();
-    // create duplicate of the initial context on our boot level
-    usedContexts = allocateContext(currentID, selfie_ID());
-
-    if (debug_boot) {
-      print((int*) "hypster create");
-      println();
-      context = usedContexts;
-      while(context != (int*) 0){
-        print((int*) "contextID ");
-        printInteger(getID(context));
-        print((int*) " PT ");
-        printInteger((int) getPT(context));
-        print((int*) " curThread ");
-        if(getCurrentThread(context) != (int*)0 ) {
-          printInteger(getThreadID(getCurrentThread(context)));
-        }
-        thread = getThreads(context);
-        while(thread != (int*) 0){
+      if (usedContexts == (int*) 0){
+          print((int*) "creating context, since i am a hypster ");
+          printInteger(currentID);
           println();
-          print((int*) "    ThreadID ");
-          printInteger(getThreadID(thread));
-          print((int*) " PC ");
-          printInteger(getThreadPC(thread));
-          print((int*) " REG-P ");
-          printInteger((int) getThreadRegs(thread));
-          print((int*) " thread-P ");
-          printInteger((int) getNextThread(thread));
-          thread = getNextThread(thread);
-        }
-        println();
-        context = getNextContext(context);
-      }
-      println();
-    }
-  }
+          // create duplicate of the initial context on our boot level
+          usedContexts = allocateContext(currentID, selfie_ID());
 
-  up_loadBinary(getPT(usedContexts));
-  up_loadArguments(getPT(usedContexts), argc, argv);
-  down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
+          if (debug_boot) {
+              print((int*) "hypster create");
+              println();
+              context = usedContexts;
+              while(context != (int*) 0){
+                  print((int*) "contextID ");
+                  printInteger(getID(context));
+                  print((int*) " PT ");
+                  printInteger((int) getPT(context));
+                  print((int*) " curThread ");
+                  if(getCurrentThread(context) != (int*)0 ) {
+                      printInteger(getThreadID(getCurrentThread(context)));
+                  }
+                  thread = getThreads(context);
+                  while(thread != (int*) 0){
+                      println();
+                      print((int*) "    ThreadID ");
+                      printInteger(getThreadID(thread));
+                      print((int*) " PC ");
+                      printInteger(getThreadPC(thread));
+                      print((int*) " REG-P ");
+                      printInteger((int) getThreadRegs(thread));
+                      print((int*) " thread-P ");
+                      printInteger((int) getNextThread(thread));
+                      thread = getNextThread(thread);
+                  }
+                  println();
+                  context = getNextContext(context);
+              }
+              println();
+          }
+      }
+
+      up_loadBinary(getPT(usedContexts));
+      up_loadArguments(getPT(usedContexts), argc, argv);
+      down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
+      counter = counter + 1;
+  }
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
