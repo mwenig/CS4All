@@ -917,9 +917,13 @@ void emitUnlock();
 void doUnlock();
 void implementUnlock();
 
+// For debugging purposes
+void emitGetTid();
+void implementGetTid();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 0;
+int debug_create = 1;
 int debug_switch = 0;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
@@ -8219,6 +8223,9 @@ void deleteThread(int *fromContext, int *thread) {
   if (getCurrentThread(fromContext) == thread) {
     setCurrThread(fromContext, (int *) 0);
   }
+  if (getConPrevThread(fromContext) == thread) {
+    setConPrevThread(fromContext, (int *) 0);
+  }
 }
 
 void insertThread(int *context, int *newThread) {
@@ -8712,14 +8719,12 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
 
       }
       else if (exceptionNumber == EXCEPTION_TIMER) {
-
           thread = schedule(fromPID);
 
           toID = getThreadPID(thread);
           toTID = getThreadID(thread);
       }
       else {
-
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
         printInteger(getID(fromContext));
