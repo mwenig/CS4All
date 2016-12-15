@@ -917,23 +917,19 @@ void emitUnlock();
 void doUnlock();
 void implementUnlock();
 
-// For debugging purposes
-void emitGetTid();
-void implementGetTid();
-
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 1;
-int debug_switch = 0;
+int debug_switch = 1;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_boot = 0;
-int debug_delete = 0;
+int debug_delete = 1;
 int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
-int debug_scheduling = 0;
+int debug_scheduling = 1;
 int debug_yield = 0;
 int debug_runOrHost = 0;
 int debug_lock = 0;
@@ -1312,13 +1308,12 @@ int* findThread(int* threads, int id);
 
 void switchContext(int* from, int* to);
 
-void saveThreadState();
-
 void freeContext(int* context);
 int* deleteContext(int* context, int* from);
 void deleteThread(int* fromContext, int* thread);
 void insertThread(int *context, int *newThread);
 
+void saveThreadState();
 void printThreadList(int *context);
 void printThreadLists();
 
@@ -1713,7 +1708,7 @@ int rightShift(int n, int b) {
     // then dividing with powers of two, and finally restoring the sign bit
     // but b bits to the right; this works even if n == INT_MIN
     return ((n + 1) + INT_MAX) / twoToThePowerOf(b) +
-      (INT_MAX / twoToThePowerOf(b) + 1);
+           (INT_MAX / twoToThePowerOf(b) + 1);
   else if (b == 31)
     // right shift of a negative 32-bit integer by 31 bits is 1 (the sign bit)
     return 1;
@@ -2094,9 +2089,9 @@ void printInteger(int n) {
 }
 
 void printDebug() {
-    println();
-    print((int *) "--Debug--");
-    println();
+  println();
+  print((int *) "--Debug--");
+  println();
 }
 
 void printFixedPointPercentage(int a, int b) {
@@ -3249,7 +3244,7 @@ int gr_factor() {
       else
         syntaxErrorSymbol(SYM_RPARENTHESIS);
 
-    // not a cast: "(" expression ")"
+      // not a cast: "(" expression ")"
     } else {
       type = gr_expression();
 
@@ -3274,7 +3269,7 @@ int gr_factor() {
 
       getSymbol();
 
-    // * "(" expression ")"
+      // * "(" expression ")"
     } else if (symbol == SYM_LPARENTHESIS) {
       getSymbol();
 
@@ -3295,7 +3290,7 @@ int gr_factor() {
 
     type = INT_T;
 
-  // identifier?
+    // identifier?
   } else if (symbol == SYM_IDENTIFIER) {
     variableOrProcedureName = identifier;
 
@@ -3319,7 +3314,7 @@ int gr_factor() {
       // variable access: identifier
       type = load_variable(variableOrProcedureName);
 
-  // integer?
+    // integer?
   } else if (symbol == SYM_INTEGER) {
     load_integer(literal);
 
@@ -3327,7 +3322,7 @@ int gr_factor() {
 
     type = INT_T;
 
-  // character?
+    // character?
   } else if (symbol == SYM_CHARACTER) {
     talloc();
 
@@ -3337,7 +3332,7 @@ int gr_factor() {
 
     type = INT_T;
 
-  // string?
+    // string?
   } else if (symbol == SYM_STRING) {
     load_string(string);
 
@@ -3345,7 +3340,7 @@ int gr_factor() {
 
     type = INTSTAR_T;
 
-  //  "(" expression ")"
+    //  "(" expression ")"
   } else if (symbol == SYM_LPARENTHESIS) {
     getSymbol();
 
@@ -3620,7 +3615,7 @@ void gr_while() {
             exit(-1);
           }
         }
-        // only one statement without {}
+          // only one statement without {}
         else
           gr_statement();
       } else
@@ -3683,7 +3678,7 @@ void gr_if() {
             exit(-1);
           }
         }
-        // only one statement without {}
+          // only one statement without {}
         else
           gr_statement();
 
@@ -3713,7 +3708,7 @@ void gr_if() {
               exit(-1);
             }
 
-          // only one statement without {}
+            // only one statement without {}
           } else
             gr_statement();
 
@@ -3826,7 +3821,7 @@ void gr_statement() {
       else
         syntaxErrorSymbol(SYM_SEMICOLON);
 
-    // "*" "(" expression ")"
+      // "*" "(" expression ")"
     } else if (symbol == SYM_LPARENTHESIS) {
       getSymbol();
 
@@ -3867,7 +3862,7 @@ void gr_statement() {
     } else
       syntaxErrorSymbol(SYM_LPARENTHESIS);
   }
-  // identifier "=" expression | call
+    // identifier "=" expression | call
   else if (symbol == SYM_IDENTIFIER) {
     variableOrProcedureName = identifier;
 
@@ -3888,7 +3883,7 @@ void gr_statement() {
       else
         syntaxErrorSymbol(SYM_SEMICOLON);
 
-    // identifier = expression
+      // identifier = expression
     } else if (symbol == SYM_ASSIGN) {
       entry = getVariable(variableOrProcedureName);
 
@@ -3914,15 +3909,15 @@ void gr_statement() {
     } else
       syntaxErrorUnexpected();
   }
-  // while statement?
+    // while statement?
   else if (symbol == SYM_WHILE) {
     gr_while();
   }
-  // if statement?
+    // if statement?
   else if (symbol == SYM_IF) {
     gr_if();
   }
-  // return statement?
+    // return statement?
   else if (symbol == SYM_RETURN) {
     gr_return();
 
@@ -4770,15 +4765,15 @@ void fixup_relative(int fromAddress) {
   instruction = loadBinary(fromAddress);
 
   storeBinary(fromAddress,
-    encodeIFormat(getOpcode(instruction),
-      getRS(instruction),
-      getRT(instruction),
-      (binaryLength - fromAddress - WORDSIZE) / WORDSIZE));
+              encodeIFormat(getOpcode(instruction),
+                            getRS(instruction),
+                            getRT(instruction),
+                            (binaryLength - fromAddress - WORDSIZE) / WORDSIZE));
 }
 
 void fixup_absolute(int fromAddress, int toAddress) {
   storeBinary(fromAddress,
-    encodeJFormat(getOpcode(loadBinary(fromAddress)), toAddress / WORDSIZE));
+              encodeJFormat(getOpcode(loadBinary(fromAddress)), toAddress / WORDSIZE));
 }
 
 void fixlink_absolute(int fromAddress, int toAddress) {
@@ -5030,62 +5025,62 @@ void emitShmMap() {
 
 
 void implementShmMap() {
-    int *shmo;
-    int id;
-    //int addr;
-    int *frameEntry;
-    int startAddr;
-    int *client;
+  int *shmo;
+  int id;
+  //int addr;
+  int *frameEntry;
+  int startAddr;
+  int *client;
 
-    // retrieve addr and id from registers
-    // TODO: assume for now that addr is always NULL, i.e. OS can choose the start address
-    //addr = *(registers + REG_A0);
-    id = *(registers + REG_A1);
+  // retrieve addr and id from registers
+  // TODO: assume for now that addr is always NULL, i.e. OS can choose the start address
+  //addr = *(registers + REG_A0);
+  id = *(registers + REG_A1);
 
 
-    // find the shared memory object by the given ID
-    shmo = find_shmo_by_id(id);
+  // find the shared memory object by the given ID
+  shmo = find_shmo_by_id(id);
 
-    // check first if the shared memory exists
-    if (shmo != (int*) 0) {
+  // check first if the shared memory exists
+  if (shmo != (int*) 0) {
 
-        // if there are no frames in physical memory associated to the shared memory object yet,
-        // the current process is the first one to call shm_map() for that object. In this case,
-        // allocate the frames once
-        if (get_shmo_frames(shmo) == (int *) 0) {
-            allocate_shmo_frames(shmo);
-        }
-
-        // find brk where the shared memory may start. We must not start somewhere in an already mapped page.
-        // instead, we start at the beginning of the next unmapped page --> round up brk
-        brk = roundUp(brk, PAGESIZE);
-
-        // start address of shared memory for the current process, based on its brk
-        startAddr = brk;
-
-        // find the client object representing the calling process by its pid
-        client = findClientByPID(shmo, getID(currentContext));
-
-        frameEntry = get_shmo_frames(shmo);
-        while (frameEntry != (int *) 0) {
-            // for each frame, create a mapping between frame and a page in the page table of the current process
-            mapPage(getPT(currentContext), getPageOfVirtualAddress(brk), getFrame(frameEntry));
-            // also store the mapped page in the page list of the client
-            addClientPage(client, getPageOfVirtualAddress(brk));
-
-            // move to the next page
-            brk = brk + PAGESIZE;
-
-            frameEntry = getNextFrame(frameEntry);
-        }
-    }
-    else {
-        // if shared memory object does not exist, return -1 to indicate error
-        startAddr = -1;
+    // if there are no frames in physical memory associated to the shared memory object yet,
+    // the current process is the first one to call shm_map() for that object. In this case,
+    // allocate the frames once
+    if (get_shmo_frames(shmo) == (int *) 0) {
+      allocate_shmo_frames(shmo);
     }
 
-    // return start address of shared memory to the calling process
-    *(registers+REG_V0) = startAddr;
+    // find brk where the shared memory may start. We must not start somewhere in an already mapped page.
+    // instead, we start at the beginning of the next unmapped page --> round up brk
+    brk = roundUp(brk, PAGESIZE);
+
+    // start address of shared memory for the current process, based on its brk
+    startAddr = brk;
+
+    // find the client object representing the calling process by its pid
+    client = findClientByPID(shmo, getID(currentContext));
+
+    frameEntry = get_shmo_frames(shmo);
+    while (frameEntry != (int *) 0) {
+      // for each frame, create a mapping between frame and a page in the page table of the current process
+      mapPage(getPT(currentContext), getPageOfVirtualAddress(brk), getFrame(frameEntry));
+      // also store the mapped page in the page list of the client
+      addClientPage(client, getPageOfVirtualAddress(brk));
+
+      // move to the next page
+      brk = brk + PAGESIZE;
+
+      frameEntry = getNextFrame(frameEntry);
+    }
+  }
+  else {
+    // if shared memory object does not exist, return -1 to indicate error
+    startAddr = -1;
+  }
+
+  // return start address of shared memory to the calling process
+  *(registers+REG_V0) = startAddr;
 
 }
 
@@ -5132,7 +5127,7 @@ void implementShmClose() {
       if (frameEntry == (int *) 0) {
         returnValue = -1;
       }
-      // there are frames existing
+        // there are frames existing
       else {
         // for every frame do:
         // delete reference to frame
@@ -5697,31 +5692,31 @@ void implementMalloc() {
 }
 
 void emitOutput() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*) "output", 0, PROCEDURE, VOID_T, 0, binaryLength);
+  createSymbolTableEntry(LIBRARY_TABLE, (int*) "output", 0, PROCEDURE, VOID_T, 0, binaryLength);
 
-    // load argument for exit
-    emitIFormat(OP_LW, REG_SP, REG_A0, 0); // output to be printed
+  // load argument for exit
+  emitIFormat(OP_LW, REG_SP, REG_A0, 0); // output to be printed
 
-    // remove the argument from the stack
-    emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
+  // remove the argument from the stack
+  emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
-    // load the correct syscall number and invoke syscall
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_OUTPUT);
-    emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
+  // load the correct syscall number and invoke syscall
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_OUTPUT);
+  emitRFormat(0, 0, 0, 0, FCT_SYSCALL);
 }
 
 void implementOutput() {
-    printInteger(*(registers + REG_A0));
-    println();
+  printInteger(*(registers + REG_A0));
+  println();
 }
 
 void emitYield() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*)"yield", 0, PROCEDURE, INT_T, 0, binaryLength);
+  createSymbolTableEntry(LIBRARY_TABLE, (int*)"yield", 0, PROCEDURE, INT_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_YIELD);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 void implementYield() {
@@ -5754,139 +5749,139 @@ void emitForkThread() {
 // -----------------------------------------------------------------
 
 void emitLock() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*) "lock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+  createSymbolTableEntry(LIBRARY_TABLE, (int*) "lock", 0, PROCEDURE, VOID_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_LOCK);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 void implementLock() {
-    throwException(EXCEPTION_LOCK, 0);
+  throwException(EXCEPTION_LOCK, 0);
 }
 
 int *doLock() {
-    int *thread;
-    int *context;
-    int *newThread;
+  int *thread;
+  int *context;
+  int *newThread;
 
-    // retrieve the calling thread
-    context = currentContext;
-    thread = getCurrentThread(context);
+  // retrieve the calling thread
+  context = currentContext;
+  thread = getCurrentThread(context);
 
-    // check if counter > 0. In this case, the lock is currently free
-    if (getLockCounter(global_lock) > 0) {
+  // check if counter > 0. In this case, the lock is currently free
+  if (getLockCounter(global_lock) > 0) {
 
-        // decrement the lock counter
-        decrementLockCounter(global_lock);
+    // decrement the lock counter
+    decrementLockCounter(global_lock);
 
-        // the calling thread may continue its execution
-        if (debug_lock) {
-            print((int *) "LOCK: thread ");
-            printInteger(getThreadID(thread));
-            print((int *) " in process ");
-            printInteger(getID(context));
-            print((int *) " is granted the lock");
-            println();
-        }
+    // the calling thread may continue its execution
+    if (debug_lock) {
+      print((int *) "LOCK: thread ");
+      printInteger(getThreadID(thread));
+      print((int *) " in process ");
+      printInteger(getID(context));
+      print((int *) " is granted the lock");
+      println();
     }
-    else {
-        // if counter <= 0, then the lock is currently held by another thread
-        // that is, we have to put the calling thread to sleep and place its context into the wait queue of the lock
+  }
+  else {
+    // if counter <= 0, then the lock is currently held by another thread
+    // that is, we have to put the calling thread to sleep and place its context into the wait queue of the lock
 
-        if (debug_lock) {
-            print((int *) "LOCK: thread ");
-            printInteger(getThreadID(thread));
-            print((int *) " in process ");
-            printInteger(getID(context));
-            print((int *) " is refused the lock");
-            println();
-        }
-
-        // schedule a new thread
-        newThread = schedule(getID(context));
-
-        // delete current thread from the thread list of the process
-        deleteThread(currentContext, thread);
-
-        // set next/prev pointers to null just to make sure
-        setNextThread(thread, (int*) 0);
-        setPrevThread(thread, (int*) 0);
-
-        // enqueue the thread context into the wait queue for the global lock
-        enqueue(getLockQueue(global_lock), thread);
-
-        // return the newThread
-        thread = newThread;
+    if (debug_lock) {
+      print((int *) "LOCK: thread ");
+      printInteger(getThreadID(thread));
+      print((int *) " in process ");
+      printInteger(getID(context));
+      print((int *) " is refused the lock");
+      println();
     }
-    return thread;
+
+    // schedule a new thread
+    newThread = schedule(getID(context));
+
+    // delete current thread from the thread list of the process
+    deleteThread(currentContext, thread);
+
+    // set next/prev pointers to null just to make sure
+    setNextThread(thread, (int*) 0);
+    setPrevThread(thread, (int*) 0);
+
+    // enqueue the thread context into the wait queue for the global lock
+    enqueue(getLockQueue(global_lock), thread);
+
+    // return the newThread
+    thread = newThread;
+  }
+  return thread;
 }
 
 void emitUnlock() {
-    createSymbolTableEntry(LIBRARY_TABLE, (int*) "unlock", 0, PROCEDURE, VOID_T, 0, binaryLength);
+  createSymbolTableEntry(LIBRARY_TABLE, (int*) "unlock", 0, PROCEDURE, VOID_T, 0, binaryLength);
 
-    emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
-    emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_UNLOCK);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
 
-    emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
 }
 
 void implementUnlock() {
-    throwException(EXCEPTION_UNLOCK, 0);
+  throwException(EXCEPTION_UNLOCK, 0);
 }
 
 void doUnlock() {
-    int *waitQueue;
-    int *thread;
-    int *context;
+  int *waitQueue;
+  int *thread;
+  int *context;
 
-    waitQueue = getLockQueue(global_lock);
-    context = currentContext;
-    thread = getCurrentThread(context);
+  waitQueue = getLockQueue(global_lock);
+  context = currentContext;
+  thread = getCurrentThread(context);
 
-    // check if wait queue is empty
-    if (isEmptyQueue(waitQueue)) {
+  // check if wait queue is empty
+  if (isEmptyQueue(waitQueue)) {
 
-        if (debug_lock) {
-            print((int *) "LOCK: thread ");
-            printInteger(getThreadID(thread));
-            print((int *) " of process ");
-            printInteger(getID(context));
-            print((int *) " releases the lock - no thread is waiting for it");
-            println();
-        }
-
-        // in this case, no other thread will be woken up
-        // just increment the counter again
-        incrementLockCounter(global_lock);
+    if (debug_lock) {
+      print((int *) "LOCK: thread ");
+      printInteger(getThreadID(thread));
+      print((int *) " of process ");
+      printInteger(getID(context));
+      print((int *) " releases the lock - no thread is waiting for it");
+      println();
     }
-    else {
 
-        if (debug_lock) {
-            print((int *) "LOCK: thread ");
-            printInteger(getThreadID(thread));
-            print((int *) " in process ");
-            printInteger(getID(context));
-            print((int *) " releases the lock - there is a waiting thread");
-            println();
-        }
+    // in this case, no other thread will be woken up
+    // just increment the counter again
+    incrementLockCounter(global_lock);
+  }
+  else {
 
-        // if the queue is not empty, do not increment the counter, but wake up the first
-        // thread in the wait queue
-        thread = dequeue(waitQueue);
-
-        setNextThread(thread, (int*) 0);
-        setPrevThread(thread, (int*) 0);
-
-        // find the context the woken up thread belongs to
-        context = findContext(getThreadPID(thread), usedContexts);
-
-
-        // insert the thread into the thread list of that context
-        insertThread(context, thread);
-
+    if (debug_lock) {
+      print((int *) "LOCK: thread ");
+      printInteger(getThreadID(thread));
+      print((int *) " in process ");
+      printInteger(getID(context));
+      print((int *) " releases the lock - there is a waiting thread");
+      println();
     }
+
+    // if the queue is not empty, do not increment the counter, but wake up the first
+    // thread in the wait queue
+    thread = dequeue(waitQueue);
+
+    setNextThread(thread, (int*) 0);
+    setPrevThread(thread, (int*) 0);
+
+    // find the context the woken up thread belongs to
+    context = findContext(getThreadPID(thread), usedContexts);
+
+
+    // insert the thread into the thread list of that context
+    insertThread(context, thread);
+
+  }
 }
 
 void emitID() {
@@ -5971,7 +5966,7 @@ void emitSwitch() {
   emitIFormat(OP_LW, REG_SP, REG_A1, 0); // ID of thread to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
-    // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
+  // we put 0 there, because we want to switch to process 0 -> this is the OS aka the first process the mipster startet
   emitIFormat(OP_LW, REG_SP, REG_A0, 0); // ID of context to which we switch
   emitIFormat(OP_ADDIU, REG_SP, REG_SP, WORDSIZE);
 
@@ -6026,7 +6021,23 @@ void implementThreadFork() {
 }
 
 void implementThreadForkAPI() {
+  int ret;
+  //print((int *) "threadFork_API");
+  //println();
 
+  //TODO RUPI: fork the thread
+  printInteger(selfie_ID());
+  print((int*) " saving pc to C ");
+  printInteger(getID(currentContext));
+  print((int*) " T ");
+  printInteger(getThreadID(getCurrentThread(currentContext)));
+  print((int*) " - PC ");
+  printInteger(pc);
+  println();
+  setThreadPC(getCurrentThread(currentContext), pc);
+  //pc = pc + WORDSIZE;
+  //ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
+  //*(registers+REG_V1) = ret;
   throwException(EXCEPTION_FORK, 0);
 }
 
@@ -6422,7 +6433,7 @@ int selfie_threadFork(int contextID, int threadID){
 int* createContextThread(int* context) {
   int* newThread;
 
-  newThread = malloc(5 * SIZEOFINTSTAR + 3 * SIZEOFINT);
+  newThread = malloc(3 * SIZEOFINTSTAR + 5 * SIZEOFINT);
 
   // append list accordingly
   setPrevThread(newThread, (int *) 0);
@@ -6538,7 +6549,7 @@ void doDelete(int ID, int threadID) {
         }
       }
     }
-    //no threads here?? delete context -- this should actually never happen
+      //no threads here?? delete context -- this should actually never happen
     else {
       if (debug_delete) {
         print(binaryName);
@@ -6806,7 +6817,7 @@ int delete_shmo(int *shmo) {
   if (get_prev_shmo(shmo) != (int*) 0) {
     set_next_shmo(get_prev_shmo(shmo), get_next_shmo(shmo));
   }
-  // is head of list -> set head Pointer to the next one
+    // is head of list -> set head Pointer to the next one
   else {
     shmo_list = get_next_shmo(shmo);
   }
@@ -6817,107 +6828,107 @@ int delete_shmo(int *shmo) {
 
 // Search for a shared memory object by its name
 int *find_shmo_by_name(int *name) {
-    int *shmo;
+  int *shmo;
 
-    shmo = shmo_list;
-    while (shmo != (int*) 0) {
-        if (stringCompare(get_shmo_name(shmo), name)) {
-            return shmo;
-        }
-        shmo = get_next_shmo(shmo);
+  shmo = shmo_list;
+  while (shmo != (int*) 0) {
+    if (stringCompare(get_shmo_name(shmo), name)) {
+      return shmo;
     }
-    return shmo;
+    shmo = get_next_shmo(shmo);
+  }
+  return shmo;
 }
 
 // Search for shared memory by its id
 int *find_shmo_by_id(int id) {
-    int *shmo;
+  int *shmo;
 
-    shmo = shmo_list;
-    while (shmo != (int*) 0) {
-        if (get_shmo_id(shmo) == id) {
-            return shmo;
-        }
-        shmo = get_next_shmo(shmo);
+  shmo = shmo_list;
+  while (shmo != (int*) 0) {
+    if (get_shmo_id(shmo) == id) {
+      return shmo;
     }
-    return shmo;
+    shmo = get_next_shmo(shmo);
+  }
+  return shmo;
 }
 
 void freeSharedMemoryForContext(int id){
-    int *shmo;
-    int *client;
+  int *shmo;
+  int *client;
 
-    shmo = shmo_list;
-    while (shmo != (int*) 0) {
-        client = get_shmo_clients(shmo);
-        //find all clients in all shmo which have the id
-        while(client != (int*) 0){
-            if(getClientPID(client) == id){
-                deleteClientFromShmo(shmo, client);
-            }
-            client = getNextClient(client);
-        }
-        //no clients left using the shmo? -> delete shmo
-        if (get_shmo_clients(shmo) == (int*) 0) {
-            delete_shmo(shmo);
-        }
-        shmo = get_next_shmo(shmo);
+  shmo = shmo_list;
+  while (shmo != (int*) 0) {
+    client = get_shmo_clients(shmo);
+    //find all clients in all shmo which have the id
+    while(client != (int*) 0){
+      if(getClientPID(client) == id){
+        deleteClientFromShmo(shmo, client);
+      }
+      client = getNextClient(client);
     }
+    //no clients left using the shmo? -> delete shmo
+    if (get_shmo_clients(shmo) == (int*) 0) {
+      delete_shmo(shmo);
+    }
+    shmo = get_next_shmo(shmo);
+  }
 }
 
 // Create a new shared memory object, initialize it and put
 // it into the list of shared memory objects
 int *create_shmo(int *name) {
-    int *shmo;
+  int *shmo;
 
-    shmo = malloc(2 * SIZEOFINT + 5 * SIZEOFINTSTAR);
+  shmo = malloc(2 * SIZEOFINT + 5 * SIZEOFINTSTAR);
 
-    // initialize shared memory object
-    set_next_shmo(shmo, (int *) 0);
-    set_prev_shmo(shmo, (int *) 0);
-    set_shmo_id(shmo, create_shmo_id());
-    set_shmo_size(shmo, 0);
-    set_shmo_name(shmo, name);
-    set_shmo_frames(shmo, (int*) 0);
-    set_shmo_clients(shmo, (int*) 0);
+  // initialize shared memory object
+  set_next_shmo(shmo, (int *) 0);
+  set_prev_shmo(shmo, (int *) 0);
+  set_shmo_id(shmo, create_shmo_id());
+  set_shmo_size(shmo, 0);
+  set_shmo_name(shmo, name);
+  set_shmo_frames(shmo, (int*) 0);
+  set_shmo_clients(shmo, (int*) 0);
 
-    // new shared memory object becomes head of existing list
-    if (shmo_list != (int*) 0) {
-        set_next_shmo(shmo, shmo_list);
-        set_prev_shmo(shmo_list, shmo);
-    }
-    shmo_list = shmo;
+  // new shared memory object becomes head of existing list
+  if (shmo_list != (int*) 0) {
+    set_next_shmo(shmo, shmo_list);
+    set_prev_shmo(shmo_list, shmo);
+  }
+  shmo_list = shmo;
 
-    return shmo;
+  return shmo;
 }
 
 // Create a unique shared memory id
 int create_shmo_id() {
-    int shmo_id;
+  int shmo_id;
 
-    shmo_id = shmo_id_counter;
-    shmo_id_counter = shmo_id_counter + 1;
-    return shmo_id;
+  shmo_id = shmo_id_counter;
+  shmo_id_counter = shmo_id_counter + 1;
+  return shmo_id;
 }
 
 // prints the given shared memory object
 void print_shmo(int *shmo) {
 
-    println();
-    print((int*)"ID: ");
-    printInteger(get_shmo_id(shmo));
-    println();
+  println();
+  print((int*)"ID: ");
+  printInteger(get_shmo_id(shmo));
+  println();
 
-    print((int*)"Name: ");
-    print(get_shmo_name(shmo));
-    println();
+  print((int*)"Name: ");
+  print(get_shmo_name(shmo));
+  println();
 
-    print((int*)"Size: ");
-    printInteger(get_shmo_size(shmo));
-    println();
-    print((int*)"Registered Processes: ");
-    printClientList(shmo);
-    println();
+  print((int*)"Size: ");
+  printInteger(get_shmo_size(shmo));
+  println();
+  print((int*)"Registered Processes: ");
+  printClientList(shmo);
+  println();
 
 }
 
@@ -6935,41 +6946,41 @@ void setNextFrame(int *frameEntry, int *next) {*(frameEntry + 1) = (int) next; }
 // used for creating a list of frames for a shared memory object.
 // the number of frames in this list depends on the user-specified size of the shared memory
 void allocate_shmo_frames(int *shmo) {
-    int frame_count;
-    int i;
-    int *frames;
+  int frame_count;
+  int i;
+  int *frames;
 
-    // the frame list is empty first
-    frames = (int*) 0;
+  // the frame list is empty first
+  frames = (int*) 0;
 
-    // only multiples of page/frame size are allocated -> round up size to be multiple of PAGESIZE
-    // then determine how many frames have to be allocated -> divide by PAGESIZE
-    frame_count = roundUp(get_shmo_size(shmo), PAGESIZE) / PAGESIZE;
+  // only multiples of page/frame size are allocated -> round up size to be multiple of PAGESIZE
+  // then determine how many frames have to be allocated -> divide by PAGESIZE
+  frame_count = roundUp(get_shmo_size(shmo), PAGESIZE) / PAGESIZE;
 
-    i = 0;
-    while (i < frame_count) {
-        // allocate new frame and store it in the growing frame list
-        frames = allocate_shmo_frame(frames);
-        i = i + 1;
-    }
+  i = 0;
+  while (i < frame_count) {
+    // allocate new frame and store it in the growing frame list
+    frames = allocate_shmo_frame(frames);
+    i = i + 1;
+  }
 
-    // associate the frame list to the shared memory object
-    set_shmo_frames(shmo, frames);
+  // associate the frame list to the shared memory object
+  set_shmo_frames(shmo, frames);
 }
 
 
 // used for creating a single frame entry
 int *allocate_shmo_frame(int *frames) {
-    int *entry;
+  int *entry;
 
-    entry = malloc(2 * SIZEOFINTSTAR);
+  entry = malloc(2 * SIZEOFINTSTAR);
 
-    // allocate a new frame in physical memory
-    setFrame(entry, palloc());
-    // new frame becomes head of the already existing list
-    setNextFrame(entry, frames);
+  // allocate a new frame in physical memory
+  setFrame(entry, palloc());
+  // new frame becomes head of the already existing list
+  setNextFrame(entry, frames);
 
-    return entry;
+  return entry;
 }
 
 // -------------------------------------------------------------------------------------------
@@ -6995,80 +7006,80 @@ void setClientPID(int *client, int pid)      { *(client + 2) = pid; }
 void setClientPages(int *client, int *pages) { *(client + 3) = (int) pages; }
 
 void deleteClientFromShmo(int* shmo, int* client){
-    if (getPrevClient(client) != (int*) 0) {
-        setNextClient(getPrevClient(client), getNextClient(client));
-    }
-        // is head of list -> set head Pointer to the next one
-    else {
-        set_shmo_clients(shmo, getNextClient(client));
-    }
-    if (getNextClient(client) != (int*) 0) {
-        setPrevClient(getNextClient(client), getPrevClient(client));
-    }
+  if (getPrevClient(client) != (int*) 0) {
+    setNextClient(getPrevClient(client), getNextClient(client));
+  }
+    // is head of list -> set head Pointer to the next one
+  else {
+    set_shmo_clients(shmo, getNextClient(client));
+  }
+  if (getNextClient(client) != (int*) 0) {
+    setPrevClient(getNextClient(client), getPrevClient(client));
+  }
 }
 
 void registerClient(int *shmo, int pid) {
-    int *client;
+  int *client;
 
-    //allocate and initialize client struct
-    client = malloc(SIZEOFINT + 3 * SIZEOFINTSTAR);
-    setClientPID(client, pid);
-    setClientPages(client, (int*) 0);
-    setNextClient(client, (int*) 0);
+  //allocate and initialize client struct
+  client = malloc(SIZEOFINT + 3 * SIZEOFINTSTAR);
+  setClientPID(client, pid);
+  setClientPages(client, (int*) 0);
+  setNextClient(client, (int*) 0);
 
-    // make new client the head of the client list
-    setNextClient(client, get_shmo_clients(shmo));
-    set_shmo_clients(shmo, client);
+  // make new client the head of the client list
+  setNextClient(client, get_shmo_clients(shmo));
+  set_shmo_clients(shmo, client);
 
 }
 
 int* findClientByPID(int *shmo, int pid) {
-    int *client;
+  int *client;
 
-    client = get_shmo_clients(shmo);
-    while (client != (int*) 0) {
-        if (getClientPID(client) == pid) {
-            return client;
-        }
-        client = getNextClient(client);
+  client = get_shmo_clients(shmo);
+  while (client != (int*) 0) {
+    if (getClientPID(client) == pid) {
+      return client;
     }
-    return client;
+    client = getNextClient(client);
+  }
+  return client;
 }
 
 void printClientPages(int *client) {
-    int *page;
-    page = getClientPages(client);
+  int *page;
+  page = getClientPages(client);
 
-    while (page != (int*) 0) {
-        printInteger(*page);
-        print((int*) " ");
-        page = (int*) *(page+1);
-    }
-    println();
+  while (page != (int*) 0) {
+    printInteger(*page);
+    print((int*) " ");
+    page = (int*) *(page+1);
+  }
+  println();
 }
 
 void printClientList(int *shmo) {
-    int *client;
+  int *client;
 
-    client = get_shmo_clients(shmo);
+  client = get_shmo_clients(shmo);
 
-    while (client != (int*) 0) {
-        printInteger(getClientPID(client));
-        print((int*) " ");
-        client = getNextClient(client);
-    }
-    println();
+  while (client != (int*) 0) {
+    printInteger(getClientPID(client));
+    print((int*) " ");
+    client = getNextClient(client);
+  }
+  println();
 }
 
 void addClientPage(int *client, int page) {
-    int *pageEntry;
+  int *pageEntry;
 
-    pageEntry = malloc(SIZEOFINT + SIZEOFINTSTAR);
+  pageEntry = malloc(SIZEOFINT + SIZEOFINTSTAR);
 
-    *pageEntry = page;
-    *(pageEntry + 1) = (int) getClientPages(client);
+  *pageEntry = page;
+  *(pageEntry + 1) = (int) getClientPages(client);
 
-    setClientPages(client, pageEntry);
+  setClientPages(client, pageEntry);
 
 }
 
@@ -7098,7 +7109,7 @@ void fct_syscall() {
     else if (*(registers+REG_V0) == SYSCALL_ID)
       implementID();
     else if (*(registers+REG_V0) == SYSCALL_YIELD)
-        implementYield();
+      implementYield();
     else if (*(registers+REG_V0) == SYSCALL_CREATE)
       implementCreate();
     else if (*(registers+REG_V0) == SYSCALL_SWITCH)
@@ -7892,9 +7903,9 @@ void interrupt() {
       cycles = 0;
 
       if (status == 0) {
-          // only throw exception if no other is pending
-          // TODO: handle multiple pending exceptions
-          throwException(EXCEPTION_TIMER, 0);
+        // only throw exception if no other is pending
+        // TODO: handle multiple pending exceptions
+        throwException(EXCEPTION_TIMER, 0);
       }
     }
 }
@@ -8088,7 +8099,7 @@ int* allocateContext(int ID, int parentID) {
   setThreadRegLo(mainThread, 0);
   setThreadRegHi(mainThread, 0);
   setThreads(context, mainThread);
-  setThreadPID(mainThread, getID(context));
+  setThreadPID(mainThread, ID);
   setCurrThread(context, mainThread);
 
   return context;
@@ -8099,10 +8110,10 @@ int* createContext(int ID, int parentID, int* in) {
 
   context = allocateContext(ID, parentID);
 
-  setNextContext(context, in);
-
-  if (in != (int*) 0)
+  if (in != (int*) 0) {
+    setNextContext(context, in);
     setPrevContext(in, context);
+  }
 
   return context;
 }
@@ -8223,9 +8234,6 @@ void deleteThread(int *fromContext, int *thread) {
   if (getCurrentThread(fromContext) == thread) {
     setCurrThread(fromContext, (int *) 0);
   }
-  if (getConPrevThread(fromContext) == thread) {
-    setConPrevThread(fromContext, (int *) 0);
-  }
 }
 
 void insertThread(int *context, int *newThread) {
@@ -8240,7 +8248,7 @@ void insertThread(int *context, int *newThread) {
   if (threads != (int*) 0) {
     setPrevThread(threads, newThread);
   }
-  // if the thread list is empty, then make newThread the current thread of the context
+    // if the thread list is empty, then make newThread the current thread of the context
   else {
     setCurrThread(context, newThread);
   }
@@ -8250,113 +8258,113 @@ void insertThread(int *context, int *newThread) {
 
 
 int scheduleRoundRobinThread(int fromID) {
-    int *currContext;
-    int *nextThread;
-    int toThreadID;
-    //get current context
-    currContext = findContext(fromID, usedContexts);
+  int *currContext;
+  int *nextThread;
+  int toThreadID;
+  //get current context
+  currContext = findContext(fromID, usedContexts);
 
-    //schedule to the next thread
-    nextThread = getNextThread(getCurrentThread(currContext));
+  //schedule to the next thread
+  nextThread = getNextThread(getCurrentThread(currContext));
 
-    if(nextThread == (int*) 0){
-        toThreadID = -1;
-    } else {
-        toThreadID = getThreadID(nextThread);
-    }
+  if(nextThread == (int*) 0){
+    toThreadID = -1;
+  } else {
+    toThreadID = getThreadID(nextThread);
+  }
 
-    return toThreadID;
+  return toThreadID;
 }
 
 
 int scheduleRoundRobin(int fromID) {
-    int *nextContext;
-    int *currContext;
-    //get current context
-    currContext = findContext(fromID, usedContexts);
+  int *nextContext;
+  int *currContext;
+  //get current context
+  currContext = findContext(fromID, usedContexts);
 
-    // find next context
-    nextContext = getNextContext(currContext);
-    // if next context is null, move to start of thread list
+  // find next context
+  nextContext = getNextContext(currContext);
+  // if next context is null, move to start of thread list
+  if (nextContext == (int *) 0) {
+    nextContext = usedContexts;
+  }
+
+  // if nextContext has no active threads, schedule the next thread in the list until
+  // we find a process with active threads
+  // TODO: make this more elegant/efficient
+  while (getThreads(nextContext) == (int*) 0) {
+    nextContext = getNextContext(nextContext);
     if (nextContext == (int *) 0) {
-        nextContext = usedContexts;
+      nextContext = usedContexts;
     }
-
-    // if nextContext has no active threads, schedule the next thread in the list until
-    // we find a process with active threads
-    // TODO: make this more elegant/efficient
-    while (getThreads(nextContext) == (int*) 0) {
-        nextContext = getNextContext(nextContext);
-        if (nextContext == (int *) 0) {
-            nextContext = usedContexts;
-        }
-    }
+  }
 
 
-    return getID(nextContext);
+  return getID(nextContext);
 }
 
 
 int *schedule(int fromPID) {
-    int toTID;
-    int toPID;
-    int *thread;
-    int *context;
+  int toTID;
+  int toPID;
+  int *thread;
+  int *context;
 
-    toPID = fromPID;
-    toTID = scheduleRoundRobinThread(fromPID);
+  toPID = fromPID;
+  toTID = scheduleRoundRobinThread(fromPID);
 
 
-    if(toTID < 0){
-        toPID = scheduleRoundRobin(fromPID);
-        toTID = getThreadID(getThreads(findContext(toPID, usedContexts)));
-    }
+  if(toTID < 0){
+    toPID = scheduleRoundRobin(fromPID);
+    toTID = getThreadID(getThreads(findContext(toPID, usedContexts)));
+  }
 
-    context = findContext(toPID, usedContexts);
-    thread = findThread(getThreads(context), toTID);
+  context = findContext(toPID, usedContexts);
+  thread = findThread(getThreads(context), toTID);
 
-    if (debug_scheduling){
-        print((int*) "SCHEDULE: (P: ");
-        printInteger(getID(currentContext));
-        print((int*)", T: ");
-        printInteger(getThreadID(getCurrentThread(currentContext)));
-        print((int*)")");
-        print((int*)" -> ");
-        print((int*) "(P: ");
-        printInteger(getID(context));
-        print((int*)", T: ");
-        printInteger(getThreadID(thread));
-        print((int*)")");
-        println();
-    }
+  if (debug_scheduling){
+    print((int*) "SCHEDULE: (P: ");
+    printInteger(getID(currentContext));
+    print((int*)", T: ");
+    printInteger(getThreadID(getCurrentThread(currentContext)));
+    print((int*)")");
+    print((int*)" -> ");
+    print((int*) "(P: ");
+    printInteger(getID(context));
+    print((int*)", T: ");
+    printInteger(getThreadID(thread));
+    print((int*)")");
+    println();
+  }
 
-    return thread;
+  return thread;
 }
 
 void printThreadList(int *context) {
-    int *thread;
+  int *thread;
 
-    thread = getThreads(context);
+  thread = getThreads(context);
 
-    print((int*)"thread list of context ");
-    printInteger(getID(context));
-    print((int*)": ");
-    while (thread != (int*) 0) {
-        printInteger(getThreadID(thread));
-        print((int*)" ");
-        thread = getNextThread(thread);
-    }
-    println();
+  print((int*)"thread list of context ");
+  printInteger(getID(context));
+  print((int*)": ");
+  while (thread != (int*) 0) {
+    printInteger(getThreadID(thread));
+    print((int*)" ");
+    thread = getNextThread(thread);
+  }
+  println();
 }
 
 void printThreadLists() {
-    int *context;
-    context = usedContexts;
+  int *context;
+  context = usedContexts;
 
-    while (context != (int*)0) {
-        printThreadList(context);
-        context = getNextContext(context);
-    }
+  while (context != (int*)0) {
+    printThreadList(context);
+    context = getNextContext(context);
+  }
 }
 
 void mapPage(int* table, int page, int frame) {
@@ -8641,8 +8649,13 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
       toID = getParent(fromContext);
 
-      if (findContext(toID, usedContexts) == (int *) 0)
+      if (findContext(toID, usedContexts) == (int *) 0) {
+        printInteger(selfie_ID());
+        print((int*) " can't find context ");
+        printInteger(toID);
+        println();
         return 1;
+      }
     } else {
       // we are the parent in charge of handling exceptions
       savedStatus = selfie_status();
@@ -8703,28 +8716,30 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         }
       }
       else if (exceptionNumber == EXCEPTION_LOCK) {
-          thread = doLock();
+        thread = doLock();
 
-          toID = getThreadPID(thread);
-          toTID = getThreadID(thread);
+        toID = getThreadPID(thread);
+        toTID = getThreadID(thread);
       }
       else if (exceptionNumber == EXCEPTION_UNLOCK) {
-          doUnlock();
+        doUnlock();
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
-          thread = schedule(fromPID);
-          toID = getThreadPID(thread);
-          toTID = getThreadID(thread);
+        thread = schedule(toID);
+        toID = getThreadPID(thread);
+        toTID = getThreadID(thread);
 
       }
       else if (exceptionNumber == EXCEPTION_TIMER) {
-          thread = schedule(fromPID);
 
-          toID = getThreadPID(thread);
-          toTID = getThreadID(thread);
+        thread = schedule(toID);
+
+        toID = getThreadPID(thread);
+        toTID = getThreadID(thread);
       }
       else {
+
         print(binaryName);
         print((int *) " - runOrHostUntilExitWithPageFaultHandling: context ");
         printInteger(getID(fromContext));
@@ -8799,7 +8814,7 @@ int bootminmob(int argc, int* argv, int machine) {
 int boot(int argc, int* argv) {
   // works with mipsters and hypsters
   int exitCode;
-  int counter;
+  int id;
   int currentID;
   int* thread;
   int* context;
@@ -8821,55 +8836,24 @@ int boot(int argc, int* argv) {
   resetInterpreter();
   resetMicrokernel();
 
-  counter = 0;
-  while (counter < INSTANCE_COUNT) {
-      currentID = selfie_create();
+  currentID = selfie_create();
 
-      if (usedContexts == (int*) 0){
-          print((int*) "creating context, since i am a hypster ");
-          printInteger(currentID);
-          println();
-          // create duplicate of the initial context on our boot level
-          usedContexts = allocateContext(currentID, selfie_ID());
+  if(currentContext == (int*) 0){
+    print((int*) "parent ");
+    printInteger(selfie_ID());
+    print((int*) " creating new context ");
+    printInteger(currentID);
+    println();
+    usedContexts = createContext(currentID, selfie_ID(), usedContexts);
 
-          if (debug_boot) {
-              print((int*) "hypster create");
-              println();
-              context = usedContexts;
-              while(context != (int*) 0){
-                  print((int*) "contextID ");
-                  printInteger(getID(context));
-                  print((int*) " PT ");
-                  printInteger((int) getPT(context));
-                  print((int*) " curThread ");
-                  if(getCurrentThread(context) != (int*)0 ) {
-                      printInteger(getThreadID(getCurrentThread(context)));
-                  }
-                  thread = getThreads(context);
-                  while(thread != (int*) 0){
-                      println();
-                      print((int*) "    ThreadID ");
-                      printInteger(getThreadID(thread));
-                      print((int*) " PC ");
-                      printInteger(getThreadPC(thread));
-                      print((int*) " REG-P ");
-                      printInteger((int) getThreadRegs(thread));
-                      print((int*) " thread-P ");
-                      printInteger((int) getNextThread(thread));
-                      thread = getNextThread(thread);
-                  }
-                  println();
-                  context = getNextContext(context);
-              }
-              println();
-          }
-      }
-
-      up_loadBinary(getPT(usedContexts));
-      up_loadArguments(getPT(usedContexts), argc, argv);
-      down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
-      counter = counter + 1;
+    if (currentContext == (int*) 0)
+      currentContext = usedContexts;
   }
+
+  up_loadBinary(getPT(usedContexts));
+  up_loadArguments(getPT(usedContexts), argc, argv);
+  down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
+
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
@@ -8893,21 +8877,21 @@ int boot(int argc, int* argv) {
 }
 
 void setTimeslice() {
-    int timeslice;
-    timeslice = atoi(getArgument());
-    if (timeslice < 1)
-        TIMESLICE = 1;
-    else
-        TIMESLICE = timeslice;
+  int timeslice;
+  timeslice = atoi(getArgument());
+  if (timeslice < 1)
+    TIMESLICE = 1;
+  else
+    TIMESLICE = timeslice;
 }
 
 void setInstanceCount() {
-    int instanceCount;
-    instanceCount = atoi(getArgument());
-    if (instanceCount < 1)
-        INSTANCE_COUNT = 1;
-    else
-        INSTANCE_COUNT = instanceCount;
+  int instanceCount;
+  instanceCount = atoi(getArgument());
+  if (instanceCount < 1)
+    INSTANCE_COUNT = 1;
+  else
+    INSTANCE_COUNT = instanceCount;
 }
 
 void setFlag_OSHandlesInterruptAndException(){

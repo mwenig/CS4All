@@ -16,12 +16,12 @@ test: selfie
 	diff -q selfie1.m selfie2.m
 	diff -q selfie1.s selfie2.s
 	./selfie -c selfie.c -o selfie.m -m 2 -l selfie.m -m 2
-	./selfie -c selfie.c -o selfie3.m -s selfie3.s -y 10 -l selfie3.m -y 10 -l selfie3.m -y 10 -c selfie.c -o selfie4.m -s selfie4.s
+	./selfie -c selfie.c -o selfie3.m -s selfie3.s -y 30 -l selfie3.m -y 20 -l selfie3.m -y 10 -c selfie.c -o selfie4.m -s selfie4.s
 	diff -q selfie3.m selfie4.m
 	diff -q selfie3.s selfie4.s
 	diff -q selfie1.m selfie3.m
 	diff -q selfie1.s selfie3.s
-	./selfie -c selfie.c -o selfie5.m -s selfie5.s -min 30 -l selfie5.m -y 15 -l selfie5.m -y 6 -c selfie.c -o selfie6.m -s selfie6.s
+	./selfie -c selfie.c -o selfie5.m -s selfie5.s -min 30 -l selfie5.m -y 30 -l selfie5.m -y 30 -c selfie.c -o selfie6.m -s selfie6.s
 	diff -q selfie5.m selfie6.m
 	diff -q selfie5.s selfie6.s
 	diff -q selfie3.m selfie5.m
@@ -53,6 +53,7 @@ assign4: selfie
 	./selfie -l selfie.m -c assign4test.c -o assign4test.m -s assign4test.s
 	./selfie -l assign4test.m -m 2
 	./selfie -l selfie.m -m 10 -l assign4test.m -y 2 
+	./selfie -l selfie.m -m 10 -l selfie.m -y 10 -l assign4test.m -y 2 
 	./selfie -l selfie.m -m 5 -l assign4test.m -m 2
 
 assign3: selfie shmoTest
