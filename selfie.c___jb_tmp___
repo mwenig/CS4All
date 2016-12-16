@@ -6059,8 +6059,8 @@ void implementThreadForkAPI() {
     printInteger(pc);
     println();
   }
-  
-  setThreadPC(getCurrentThread(currentContext), pc);
+
+  //setThreadPC(getCurrentThread(currentContext), pc);
   //pc = pc + WORDSIZE;
   //ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
   //*(registers+REG_V1) = ret;
