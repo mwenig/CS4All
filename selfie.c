@@ -917,6 +917,10 @@ void emitUnlock();
 void doUnlock();
 void implementUnlock();
 
+// For debugging purposes
+void emitGetTid();
+void implementGetTid();
+
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
 int debug_create = 0;
@@ -950,7 +954,7 @@ int SYSCALL_FORK_THREAD_API = 4913;
 int SYSCALL_LOCK            = 4914;
 int SYSCALL_UNLOCK          = 4915;
 int SYSCALL_OUTPUT          = 4916;
-
+int SYSCALL_GETTID          = 4917;
 
 
 // *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~ *~*~
@@ -4420,7 +4424,7 @@ void selfie_compile() {
   emitShmSize();
   emitLock();
   emitUnlock();
-
+  emitGetTid();
 
   while (link) {
     if (numberOfRemainingArguments() == 0)
@@ -5885,6 +5889,21 @@ void doUnlock() {
   }
 }
 
+void emitGetTid() {
+  createSymbolTableEntry(LIBRARY_TABLE, (int*) "get_tid", 0, PROCEDURE, VOID_T, 0, binaryLength);
+
+  emitIFormat(OP_ADDIU, REG_ZR, REG_V0, SYSCALL_GETTID);
+  emitRFormat(OP_SPECIAL, 0, 0, 0, FCT_SYSCALL);
+
+  emitRFormat(OP_SPECIAL, REG_RA, 0, 0, FCT_JR);
+}
+
+void implementGetTid() {
+  int tid;
+  tid = getThreadID(getCurrentThread(currentContext));
+  *(registers + REG_V0) = tid;
+}
+
 void emitID() {
   createSymbolTableEntry(LIBRARY_TABLE, (int*) "hypster_ID", 0, PROCEDURE, INT_T, 0, binaryLength);
 
@@ -7150,9 +7169,10 @@ void fct_syscall() {
       implementLock();
     else if (*(registers+REG_V0) == SYSCALL_UNLOCK) {
       implementUnlock();
-    }
-    else if (*(registers+REG_V0) == SYSCALL_OUTPUT) {
+    } else if (*(registers+REG_V0) == SYSCALL_OUTPUT) {
       implementOutput();
+    } else if (*(registers+REG_V0) == SYSCALL_GETTID) {
+      implementGetTid();
     }
     else {
       pc = pc - WORDSIZE;
@@ -8942,7 +8962,6 @@ void setFlag_ExitAtExceptionInterruptIfNoOSRunning(){
 
 int selfie_run(int engine, int machine, int debugger) {
   int exitCode;
-  int i;
 
   if (binaryLength == 0) {
     print(selfieName);
@@ -8985,16 +9004,6 @@ int selfie_run(int engine, int machine, int debugger) {
     printProfile((int*) ": loads: ", loads, loadsPerAddress);
     printProfile((int*) ": stores: ", stores, storesPerAddress);
   } else {
-    i = 0;
-    print((int*) "ARGC ");
-    printInteger(selfie_argc);
-    while (i < selfie_argc){
-      print((int*) *(selfie_argv + i));
-      print( " ");
-      i = i + 1;
-    }
-
-    println();
     // boot hypster
             exitCode = boot(numberOfRemainingArguments(), remainingArguments());
   }
