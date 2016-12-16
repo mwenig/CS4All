@@ -6425,10 +6425,15 @@ int hypster_switch(int toID, int threadID) {
 }
 
 int selfie_switch(int toID, int threadID) {
+  int *context;
   if (mipster)
     return mipster_switch(toID, threadID);
-  else
+  else {
+    //hypster needs to have the currentTread (for locking) to be up to date
+    context = findContext(toID, usedContexts);
+    setCurrThread(context, findThread(getThreads(context), threadID));
     return hypster_switch(toID, threadID);
+  }
 }
 
 int mipster_threadFork(int contextID, int threadID) {
