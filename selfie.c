@@ -8345,9 +8345,7 @@ int *schedule(int fromPID) {
 
 
   if(toTID < 0){
-    print("testi");
     toPID = scheduleRoundRobin(fromPID);
-    print("testi");
     toTID = getThreadID(getThreads(findContext(toPID, usedContexts)));
   }
 
@@ -8773,7 +8771,6 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
         thread = schedule(toID);
-        print("reached");
         toID = getThreadPID(thread);
         toTID = getThreadID(thread);
 
