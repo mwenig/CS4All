@@ -919,17 +919,17 @@ void implementUnlock();
 
 // ------------------------ GLOBAL CONSTANTS -----------------------
 
-int debug_create = 1;
-int debug_switch = 1;
+int debug_create = 0;
+int debug_switch = 0;
 int debug_switch_Regs = 0;
 int debug_switch_memory = 0;
 int debug_status = 0;
 int debug_boot = 0;
-int debug_delete = 1;
+int debug_delete = 0;
 int debug_map    = 0;
 int debug_threadFork = 0;
 int debug_threadFork_memory = 0;
-int debug_scheduling = 1;
+int debug_scheduling = 0;
 int debug_yield = 0;
 int debug_runOrHost = 0;
 int debug_lock = 0;
@@ -1254,6 +1254,7 @@ void initInterpreter() {
   *(EXCEPTIONS + EXCEPTION_TIMER)              = (int) "timer interrupt";
   *(EXCEPTIONS + EXCEPTION_PAGEFAULT)          = (int) "page fault";
   *(EXCEPTIONS + EXCEPTION_YIELD)              = (int) "yield syscall";
+  *(EXCEPTIONS + EXCEPTION_FORK)               = (int) "fork syscall";
   *(EXCEPTIONS + EXCEPTION_LOCK)               = (int) "lock syscall";
   *(EXCEPTIONS + EXCEPTION_UNLOCK)             = (int) "unlock syscall";
 }
@@ -5928,9 +5929,12 @@ int doCreateContext(int parentID) {
       currentContext = usedContexts;
 
     if (debug_create) {
+      printInteger(selfie_ID());
       print(binaryName);
       print((int*) ": selfie_create context ");
       printInteger(bumpID);
+      print((int*) " with parent ");
+      printInteger(parentID);
       println();
     }
 
@@ -6229,7 +6233,6 @@ int doSwitch(int toID, int toThreadID) {
   // find the thread in that context we want to switch to
   toThread = findThread(getThreads(toContext), toThreadID);
 
-
   // set the new current thread of the context we are switching to
   setCurrThread(toContext, toThread);
 
@@ -6310,6 +6313,8 @@ void implementSwitch() {
 
   fromID = doSwitch(id, threadID);
 
+  //saveThreadState();
+
   // use REG_V1 instead of REG_V0 to avoid race condition with interrupt
   *(registers+REG_V1) = fromID;
 }
@@ -6317,6 +6322,7 @@ void implementSwitch() {
 int mipster_switch(int toID, int threadID) {
   int fromID;
   int* context;
+  int i;
   int* thread;
 
   if (debug_switch) {
@@ -6343,11 +6349,19 @@ int mipster_switch(int toID, int threadID) {
         printInteger((int) getThreadRegs(thread));
         thread = getNextThread(thread);
       }
+      i = 0;
+      while(i < 10) {
+        print((int *) " - ");
+        printInteger(*(getPT(context) + i));
+        i = i + 1;
+      }
       println();
       context = getNextContext(context);
     }
     println();
   }
+
+  //saveThreadState();
 
   // CAUTION: doSwitch() modifies the global variable registers
   // but some compilers dereference the lvalue *(registers+REG_V1)
@@ -6619,10 +6633,10 @@ void doMap(int ID, int page, int frame) {
     if (getParent(mapContext) != MIPSTER_ID) {
       parentContext = findContext(getParent(mapContext), usedContexts);
 
-      if (parentContext != (int*) 0)
+      if (parentContext != (int*) 0) {
         // assert: 0 <= frame < VIRTUALMEMORYSIZE
         frame = getFrameForPage(getPT(parentContext), frame / PAGESIZE);
-      else if (debug_map) {
+      } else if (debug_map) {
         print(binaryName);
         print((int*) ": selfie_map parent context ");
         printInteger(getParent(mapContext));
@@ -8160,6 +8174,10 @@ void switchContext(int *from, int *to) {
     if (registers != (int*) 0) {
       print((int*) " old SP ");
       printInteger(*(registers + REG_SP));
+      print((int*) " old reg-P ");
+      printInteger((int) registers);
+      print((int*) " old PT-P ");
+      printInteger((int) pt);
     }
   }
 
@@ -8182,6 +8200,10 @@ void switchContext(int *from, int *to) {
     if (registers != (int*) 0) {
       print((int*) " SP ");
       printInteger(*(registers + REG_SP));
+      print((int*) " reg-P ");
+      printInteger((int) registers);
+      print((int*) " PT-P ");
+      printInteger((int) pt);
     }
     println();
   }
@@ -8282,23 +8304,30 @@ int scheduleRoundRobin(int fromID) {
   int *currContext;
   //get current context
   currContext = findContext(fromID, usedContexts);
+    currContext = getNextContext(currContext);
+  nextContext = (int *) 0;
 
-  // find next context
-  nextContext = getNextContext(currContext);
-  // if next context is null, move to start of thread list
-  if (nextContext == (int *) 0) {
-    nextContext = usedContexts;
+  while (nextContext == (int *) 0) {
+    if (currContext != (int *) 0) {
+      if (getParent(currContext) == selfie_ID()) {
+        if (getThreads(currContext) != (int *) 0) {
+          nextContext = currContext;
+        }
+      }
+      currContext = getNextContext(currContext);
+    } else {
+      currContext = usedContexts;
+    }
   }
-
   // if nextContext has no active threads, schedule the next thread in the list until
   // we find a process with active threads
   // TODO: make this more elegant/efficient
-  while (getThreads(nextContext) == (int*) 0) {
+  /*while (getThreads(nextContext) == (int*) 0) {
     nextContext = getNextContext(nextContext);
     if (nextContext == (int *) 0) {
       nextContext = usedContexts;
     }
-  }
+  }*/
 
 
   return getID(nextContext);
@@ -8316,7 +8345,9 @@ int *schedule(int fromPID) {
 
 
   if(toTID < 0){
+    print("testi");
     toPID = scheduleRoundRobin(fromPID);
+    print("testi");
     toTID = getThreadID(getThreads(findContext(toPID, usedContexts)));
   }
 
@@ -8324,7 +8355,8 @@ int *schedule(int fromPID) {
   thread = findThread(getThreads(context), toTID);
 
   if (debug_scheduling){
-    print((int*) "SCHEDULE: (P: ");
+    printInteger(selfie_ID());
+    print((int*) " SCHEDULE: (P: ");
     printInteger(getID(currentContext));
     print((int*)", T: ");
     printInteger(getThreadID(getCurrentThread(currentContext)));
@@ -8545,6 +8577,16 @@ void down_mapPageTable(int* context, int* thread) {
   page = 0;
 
   while (isPageMapped(getPT(context), page)) {
+
+    if (debug_map) {
+      printInteger(selfie_ID());
+      print((int *) " looping for page ");
+      printInteger(page);
+      print((int *) " for ");
+      printInteger(getID(context));
+      println();
+    }
+
     selfie_map(getID(context), page, getFrameForPage(getPT(context), page));
 
     page = page + 1;
@@ -8628,6 +8670,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
   int toTID;
   int *thread;
   toTID = 0;
+  fromPID = MIPSTER_ID;
 
   while (1) {
     //toThreadID = getThreadID(getCurrentThread(findContext(toID, usedContexts)));
@@ -8638,6 +8681,8 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
       printInteger(toID);
       print((int *) " threadID ");
       printInteger(toTID);
+      print((int *) " fromID ");
+      printInteger(fromPID);
       println();
     }
 
@@ -8648,6 +8693,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
     if (getParent(fromContext) != selfie_ID()) {
       // switch to parent which is in charge of handling exceptions. If parent cannot be found -> not good
       toID = getParent(fromContext);
+      toTID = 0;
 
       if (findContext(toID, usedContexts) == (int *) 0) {
         printInteger(selfie_ID());
@@ -8727,6 +8773,7 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
         thread = schedule(toID);
+        print("reached");
         toID = getThreadPID(thread);
         toTID = getThreadID(thread);
 
@@ -8814,10 +8861,7 @@ int bootminmob(int argc, int* argv, int machine) {
 int boot(int argc, int* argv) {
   // works with mipsters and hypsters
   int exitCode;
-  int id;
   int currentID;
-  int* thread;
-  int* context;
 
   print(selfieName);
   print((int*) ": this is selfie's ");
@@ -8839,21 +8883,18 @@ int boot(int argc, int* argv) {
   currentID = selfie_create();
 
   if(currentContext == (int*) 0){
-    print((int*) "parent ");
-    printInteger(selfie_ID());
-    print((int*) " creating new context ");
-    printInteger(currentID);
-    println();
     usedContexts = createContext(currentID, selfie_ID(), usedContexts);
 
-    if (currentContext == (int*) 0)
+    if (currentContext == (int*) 0) {
       currentContext = usedContexts;
+    }
   }
-
   up_loadBinary(getPT(usedContexts));
   up_loadArguments(getPT(usedContexts), argc, argv);
   down_mapPageTable(usedContexts, getCurrentThread(usedContexts));
 
+  // initialize the global lock
+  global_lock = createLock();
 
   // mipsters and hypsters handle page faults
   exitCode = runOrHostUntilExitWithPageFaultHandling(currentID);
@@ -8904,6 +8945,7 @@ void setFlag_ExitAtExceptionInterruptIfNoOSRunning(){
 
 int selfie_run(int engine, int machine, int debugger) {
   int exitCode;
+  int i;
 
   if (binaryLength == 0) {
     print(selfieName);
@@ -8914,9 +8956,6 @@ int selfie_run(int engine, int machine, int debugger) {
   }
 
   initMemory(atoi(peekArgument()));
-
-  // initialize the global lock
-  global_lock = createLock();
 
   // pass binary name as first argument by replacing memory size
   setArgument(binaryName);
@@ -8948,10 +8987,20 @@ int selfie_run(int engine, int machine, int debugger) {
     printProfile((int*) ": loops: ", loops, loopsPerAddress);
     printProfile((int*) ": loads: ", loads, loadsPerAddress);
     printProfile((int*) ": stores: ", stores, storesPerAddress);
-  } else
-    // boot hypster
-    exitCode = boot(numberOfRemainingArguments(), remainingArguments());
+  } else {
+    i = 0;
+    print((int*) "ARGC ");
+    printInteger(selfie_argc);
+    while (i < selfie_argc){
+      print((int*) *(selfie_argv + i));
+      print( " ");
+      i = i + 1;
+    }
 
+    println();
+    // boot hypster
+            exitCode = boot(numberOfRemainingArguments(), remainingArguments());
+  }
   interpret = 0;
 
   return exitCode;

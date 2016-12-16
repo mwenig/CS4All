@@ -53,7 +53,7 @@ assign4: selfie
 	./selfie -l selfie.m -c assign4test.c -o assign4test.m -s assign4test.s
 	./selfie -l assign4test.m -m 2
 	./selfie -l selfie.m -m 10 -l assign4test.m -y 2 
-	./selfie -l selfie.m -m 10 -l selfie.m -y 10 -l assign4test.m -y 2 
+	./selfie -l selfie.m -m 60 -l selfie.m -y 60 -l assign4test.m -y 60 
 	./selfie -l selfie.m -m 5 -l assign4test.m -m 2
 
 assign3: selfie shmoTest
