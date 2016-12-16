@@ -910,11 +910,11 @@ void implementShmClose();
 
 // Lock Syscalls
 void emitLock();
-int  *doLock();
+int  *doLock(int PID, int TID);
 void implementLock();
 
 void emitUnlock();
-void doUnlock();
+void doUnlock(int PID, int TID);
 void implementUnlock();
 
 // For debugging purposes
@@ -1323,8 +1323,8 @@ void printThreadList(int *context);
 void printThreadLists();
 
 int scheduleRoundRobin(int fromID);
-int scheduleRoundRobinThread(int fromID);
-int *schedule(int fromID);
+int scheduleRoundRobinThread(int fromID, int fromTID);
+int *schedule(int fromID, int fromTID);
 
 void mapPage(int* table, int page, int frame);
 
@@ -5766,14 +5766,14 @@ void implementLock() {
   throwException(EXCEPTION_LOCK, 0);
 }
 
-int *doLock() {
+int *doLock(int PID, int TID) {
   int *thread;
   int *context;
   int *newThread;
 
   // retrieve the calling thread
-  context = currentContext;
-  thread = getCurrentThread(context);
+  context = findContext(PID, usedContexts);
+  thread = findThread(getThreads(context), TID);
 
   // check if counter > 0. In this case, the lock is currently free
   if (getLockCounter(global_lock) > 0) {
@@ -5805,14 +5805,14 @@ int *doLock() {
     }
 
     // schedule a new thread
-    newThread = schedule(getID(context));
+    newThread = schedule(getID(context), getThreadID(thread));
 
     // delete current thread from the thread list of the process
     deleteThread(currentContext, thread);
     //the currentThread is still the "refused-locked-thread".. needed to save states etc.
-    if(getCurrentThread(currentContext)== (int*) 0){
-      setCurrThread(currentContext, thread);
-    }
+    //if(getCurrentThread(currentContext)== (int*) 0){
+    //  setCurrThread(currentContext, thread);
+    //}
 
     // set next/prev pointers to null just to make sure
     setNextThread(thread, (int*) 0);
@@ -5840,14 +5840,14 @@ void implementUnlock() {
   throwException(EXCEPTION_UNLOCK, 0);
 }
 
-void doUnlock() {
+void doUnlock(int PID, int TID) {
   int *waitQueue;
   int *thread;
   int *context;
 
   waitQueue = getLockQueue(global_lock);
-  context = currentContext;
-  thread = getCurrentThread(context);
+  context = findContext(PID, usedContexts);
+  thread = findThread(getThreads(context),TID);
 
   // check if wait queue is empty
   if (isEmptyQueue(waitQueue)) {
@@ -6429,9 +6429,6 @@ int selfie_switch(int toID, int threadID) {
   if (mipster)
     return mipster_switch(toID, threadID);
   else {
-    //hypster needs to have the currentTread (for locking) to be up to date
-    context = findContext(toID, usedContexts);
-    setCurrThread(context, findThread(getThreads(context), threadID));
     return hypster_switch(toID, threadID);
   }
 }
@@ -8311,20 +8308,21 @@ void insertThread(int *context, int *newThread) {
 }
 
 
-int scheduleRoundRobinThread(int fromID) {
+int scheduleRoundRobinThread(int fromID, int fromTID) {
   int *currContext;
   int *nextThread;
   int toThreadID;
   //get current context
   currContext = findContext(fromID, usedContexts);
+  nextThread = findThread(getThreads(currContext), fromTID);
 
-  //schedule to the next thread
-  if(getCurrentThread(currContext) != (int*) 0){
-    nextThread = getNextThread(getCurrentThread(currContext));
+  if(nextThread != (int*) 0){
+    nextThread = getNextThread(nextThread);
   } else {
     nextThread = (int*) 0;
   }
 
+  //schedule to the next thread
   if(nextThread == (int*) 0){
     toThreadID = -1;
   } else {
@@ -8370,14 +8368,14 @@ int scheduleRoundRobin(int fromID) {
 }
 
 
-int *schedule(int fromPID) {
+int *schedule(int fromPID, int fromTID) {
   int toTID;
   int toPID;
   int *thread;
   int *context;
 
   toPID = fromPID;
-  toTID = scheduleRoundRobinThread(fromPID);
+  toTID = scheduleRoundRobinThread(fromPID, fromTID);
 
   if(toTID < 0){
     toPID = scheduleRoundRobin(fromPID);
@@ -8795,25 +8793,22 @@ int runOrHostUntilExitWithPageFaultHandling(int toID) {
         }
       }
       else if (exceptionNumber == EXCEPTION_LOCK) {
-        thread = doLock();
+        thread = doLock(toID, toTID);
 
         toID = getThreadPID(thread);
         toTID = getThreadID(thread);
       }
       else if (exceptionNumber == EXCEPTION_UNLOCK) {
-        doUnlock();
+        doUnlock(toID, toTID);
       }
         //If there is a timer or yield interrupt, then re-schedule
       else if (exceptionNumber == EXCEPTION_YIELD) {
-        thread = schedule(toID);
+        thread = schedule(toID, toTID);
         toID = getThreadPID(thread);
         toTID = getThreadID(thread);
-
       }
       else if (exceptionNumber == EXCEPTION_TIMER) {
-
-        thread = schedule(toID);
-
+        thread = schedule(toID, toTID);
         toID = getThreadPID(thread);
         toTID = getThreadID(thread);
       }
