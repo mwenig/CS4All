@@ -75,4 +75,23 @@ Wie ist der generelle Ablauf?
 
 
 
+ASSIGN4
+********************************************
+Wieso sind syscalls thread/locksave etc??
+-> syscalls are executed in the OS (pc, stack, pt of OS is set to the syscall)
+-> won't schedule anything to a sub-Process until this is executed
+-> even if the Hardware(mipster) wants so schedule.. he only schedules to the OS (always)
+	-> again, the pc, stack, pt,... of the OS are set to the syscall...
+	-> syscall will be finished before anything else is scheduled
+
+
+
+
+
+
+
+**********************************************
+
+
+
 

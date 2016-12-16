@@ -42,6 +42,9 @@ int main(int argc, int *argv) {
     *newLineBuffer = 10; //==newline
     *(newLineBuffer + 1) = ' ';
 
+    write(1, "Start    ", 8);
+    newLine();
+
     testA();
     //testB();
     //testC();

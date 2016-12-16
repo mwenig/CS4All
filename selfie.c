@@ -5809,6 +5809,10 @@ int *doLock() {
 
     // delete current thread from the thread list of the process
     deleteThread(currentContext, thread);
+    //the currentThread is still the "refused-locked-thread".. needed to save states etc.
+    if(getCurrentThread(currentContext)== (int*) 0){
+      setCurrThread(currentContext, thread);
+    }
 
     // set next/prev pointers to null just to make sure
     setNextThread(thread, (int*) 0);
@@ -6059,8 +6063,8 @@ void implementThreadForkAPI() {
     printInteger(pc);
     println();
   }
-  
-  setThreadPC(getCurrentThread(currentContext), pc);
+
+  //setThreadPC(getCurrentThread(currentContext), pc);
   //pc = pc + WORDSIZE;
   //ret = selfie_threadFork(getID(currentContext), getThreadID(getCurrentThread(currentContext)));
   //*(registers+REG_V1) = ret;
@@ -8310,7 +8314,11 @@ int scheduleRoundRobinThread(int fromID) {
   currContext = findContext(fromID, usedContexts);
 
   //schedule to the next thread
-  nextThread = getNextThread(getCurrentThread(currContext));
+  if(getCurrentThread(currContext) != (int*) 0){
+    nextThread = getNextThread(getCurrentThread(currContext));
+  } else {
+    nextThread = (int*) 0;
+  }
 
   if(nextThread == (int*) 0){
     toThreadID = -1;
@@ -8327,7 +8335,7 @@ int scheduleRoundRobin(int fromID) {
   int *currContext;
   //get current context
   currContext = findContext(fromID, usedContexts);
-    currContext = getNextContext(currContext);
+  currContext = getNextContext(currContext);
   nextContext = (int *) 0;
 
   while (nextContext == (int *) 0) {
@@ -8365,7 +8373,6 @@ int *schedule(int fromPID) {
 
   toPID = fromPID;
   toTID = scheduleRoundRobinThread(fromPID);
-
 
   if(toTID < 0){
     toPID = scheduleRoundRobin(fromPID);
